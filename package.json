@@ -1,0 +1,83 @@
+{
+  "name": "strategic-code-companion",
+  "displayName": "Strategic Code Companion",
+  "description": "AI-powered strategic partner for developers with multi-agent analysis",
+  "version": "1.0.0",
+  "publisher": "strategic-code-companion",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "strategic-code-companion",
+          "title": "Strategic Code Companion",
+          "icon": "$(code)"
+        }
+      ]
+    },
+    "views": {
+      "strategic-code-companion": [
+        {
+          "id": "strategic-code-companion.sidebar",
+          "name": "Strategic Code Companion",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "strategic-code-companion.analyzeWorkspace",
+        "title": "Analyze Workspace",
+        "category": "Strategic Code Companion"
+      },
+      {
+        "command": "strategic-code-companion.openSettings",
+        "title": "Open Settings",
+        "category": "Strategic Code Companion"
+      },
+      {
+        "command": "strategic-code-companion.openView",
+        "title": "Open Strategic Code Companion",
+        "category": "Strategic Code Companion"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/babel__traverse": "^7.28.0",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.3",
+    "@babel/parser": "^7.24.8",
+    "@babel/traverse": "^7.24.8",
+    "@babel/types": "^7.24.8",
+    "@google/generative-ai": "^0.17.1",
+    "@langchain/anthropic": "^0.3.0",
+    "@langchain/core": "^0.3.0",
+    "@langchain/google-genai": "^0.1.0",
+    "@langchain/openai": "^0.3.0",
+    "axios": "^1.7.2",
+    "ignore": "^5.3.1",
+    "langchain": "^0.3.0",
+    "openai": "^4.52.7"
+  }
+}
