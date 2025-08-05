@@ -1,0 +1,13 @@
+{
+    "files.exclude": {
+        "out": false,
+        "node_modules": true,
+        "**/*.map": true
+    },
+    "search.exclude": {
+        "out": true,
+        "node_modules": true,
+        "**/*.map": true
+    },
+    "typescript.preferences.includePackageJsonAutoImports": "off"
+}

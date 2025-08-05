@@ -23,31 +23,115 @@ export interface CodeChunk {
 }
 
 export class CodeIngestion {
+    private static readonly MAX_FILES = 100; // Limit to 100 files for faster analysis
+    private static readonly MAX_FILE_SIZE = 100 * 1024; // 100KB max file size
+    private static readonly MAX_CHUNKS_PER_FILE = 20; // Limit chunks per file
+    
     private static readonly DEFAULT_IGNORE_PATTERNS = [
+        // Dependencies and package managers
         'node_modules/**',
+        'bower_components/**',
+        'jspm_packages/**',
+        'vendor/**',
+        'third_party/**',
+        'packages/**',
+        '.pnp/**',
+        '.yarn/**',
+        
+        // Build outputs
         'dist/**',
         'build/**',
         'out/**',
-        '*.log',
-        '*.tmp',
-        '*.temp',
-        '.git/**',
-        '.vscode/**',
-        'coverage/**',
-        '*.min.js',
-        '*.bundle.js',
-        'vendor/**',
-        'third_party/**',
-        '__pycache__/**',
-        '*.pyc',
-        '*.pyo',
         'target/**',
         'bin/**',
         'obj/**',
+        'public/**',
+        'static/**',
+        'assets/**',
+        
+        // Python
+        '__pycache__/**',
+        '*.pyc',
+        '*.pyo',
+        '*.pyd',
+        '.Python',
+        '*.so',
+        '.pytest_cache/**',
+        '.coverage/**',
+        'htmlcov/**',
+        '.tox/**',
+        '.env/**',
+        '.venv/**',
+        'venv/**',
+        'env/**',
+        'ENV/**',
+        
+        // Version control
+        '.git/**',
+        '.svn/**',
+        '.hg/**',
+        '.bzr/**',
+        
+        // IDEs and editors  
+        '.vscode/**',
+        '.idea/**',
+        '*.swp',
+        '*.swo',
+        '*~',
+        '.DS_Store',
+        'Thumbs.db',
+        
+        // Logs and temp files
+        '*.log',
+        '*.tmp',
+        '*.temp',
+        '*.bak',
+        '*.backup',
+        '*.cache',
+        
+        // Test coverage
+        'coverage/**',
+        '.nyc_output/**',
+        
+        // Minified files
+        '*.min.js',
+        '*.min.css',
+        '*.bundle.js',
+        '*.chunk.js',
+        
+        // Binary files
         '*.exe',
         '*.dll',
-        '*.so',
-        '*.dylib'
+        '*.dylib',
+        '*.zip',
+        '*.tar',
+        '*.gz',
+        '*.rar',
+        '*.7z',
+        
+        // Images and media (usually not relevant for code analysis)
+        '*.jpg',
+        '*.jpeg',
+        '*.png',
+        '*.gif',
+        '*.bmp',
+        '*.ico',
+        '*.svg',
+        '*.mp4',
+        '*.mp3',
+        '*.wav',
+        '*.mov',
+        
+        // Documentation builds
+        'docs/_build/**',
+        'site/**',
+        '_site/**',
+        
+        // Lock files and configs that are usually auto-generated
+        'package-lock.json',
+        'yarn.lock',
+        'composer.lock',
+        'Pipfile.lock'
     ];
 
     private static readonly SUPPORTED_EXTENSIONS = new Set([
@@ -85,16 +169,29 @@ export class CodeIngestion {
     async ingestWorkspace(): Promise<CodeChunk[]> {
         const allFiles = await this.getAllSourceFiles();
         const chunks: CodeChunk[] = [];
+        
+        console.log(`Found ${allFiles.length} files, processing up to ${CodeIngestion.MAX_FILES} files...`);
+        
+        // Limit the number of files to process
+        const filesToProcess = allFiles.slice(0, CodeIngestion.MAX_FILES);
 
-        for (const filePath of allFiles) {
+        for (const filePath of filesToProcess) {
             try {
+                // Check file size before processing
+                const stats = fs.statSync(filePath);
+                if (stats.size > CodeIngestion.MAX_FILE_SIZE) {
+                    console.warn(`Skipping large file: ${filePath} (${Math.round(stats.size / 1024)}KB)`);
+                    continue;
+                }
+                
                 const fileChunks = await this.processFile(filePath);
-                chunks.push(...fileChunks);
+                chunks.push(...fileChunks.slice(0, CodeIngestion.MAX_CHUNKS_PER_FILE));
             } catch (error) {
                 console.warn(`Failed to process file ${filePath}:`, error);
             }
         }
 
+        console.log(`Successfully processed ${filesToProcess.length} files, generated ${chunks.length} chunks`);
         return chunks;
     }
 
@@ -102,6 +199,11 @@ export class CodeIngestion {
         const files: string[] = [];
         
         const walkDir = (dir: string): void => {
+            // Early exit if we've found enough files
+            if (files.length >= CodeIngestion.MAX_FILES * 2) {
+                return;
+            }
+            
             const items = fs.readdirSync(dir);
             
             for (const item of items) {
@@ -120,6 +222,11 @@ export class CodeIngestion {
                     const ext = path.extname(fullPath).toLowerCase();
                     if (CodeIngestion.SUPPORTED_EXTENSIONS.has(ext)) {
                         files.push(fullPath);
+                        
+                        // Early exit if we've found enough files
+                        if (files.length >= CodeIngestion.MAX_FILES * 2) {
+                            return;
+                        }
                     }
                 }
             }
