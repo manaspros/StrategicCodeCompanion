@@ -159,7 +159,7 @@ class SidebarProvider {
             console.log('Strategic Code Companion: Generating embeddings...');
             try {
                 const embeddingService = new embedding_1.CodeEmbeddingService();
-                const embeddings = await embeddingService.generateEmbeddings(chunks.slice(0, 50)); // Limit for testing
+                const embeddings = await embeddingService.generateEmbeddings(chunks.slice(0, 200)); // Increased embedding limit
                 await embeddingService.buildVectorStore(embeddings);
                 console.log('Strategic Code Companion: Embeddings generated successfully');
             }
@@ -174,7 +174,7 @@ class SidebarProvider {
             console.log('Strategic Code Companion: Starting multi-agent analysis...');
             try {
                 const orchestrator = new main_1.MultiAgentOrchestrator(llmProvider);
-                const results = await orchestrator.analyzeCodebase(chunks.slice(0, 20)); // Limit for testing
+                const results = await orchestrator.analyzeCodebase(chunks.slice(0, 100)); // Increased analysis chunk limit
                 console.log('Strategic Code Companion: Analysis completed successfully');
                 // Step 4: Display results
                 this.showResults(results);

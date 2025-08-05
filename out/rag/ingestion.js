@@ -319,9 +319,9 @@ class CodeIngestion {
     }
 }
 exports.CodeIngestion = CodeIngestion;
-CodeIngestion.MAX_FILES = 100; // Limit to 100 files for faster analysis
-CodeIngestion.MAX_FILE_SIZE = 100 * 1024; // 100KB max file size
-CodeIngestion.MAX_CHUNKS_PER_FILE = 20; // Limit chunks per file
+CodeIngestion.MAX_FILES = 300; // Increased to analyze more files
+CodeIngestion.MAX_FILE_SIZE = 500 * 1024; // 500KB max file size (5x increase)
+CodeIngestion.MAX_CHUNKS_PER_FILE = 50; // More chunks per file for better analysis
 CodeIngestion.DEFAULT_IGNORE_PATTERNS = [
     // Dependencies and package managers
     'node_modules/**',

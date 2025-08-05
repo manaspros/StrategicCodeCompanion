@@ -37,8 +37,13 @@ export class TutorAgent {
 
     async findTutorials(analysis: CodebaseAnalysis, codeChunks: CodeChunk[], refactoring?: RefactoringResults, architecture?: ArchitectureResults): Promise<TutorialResults> {
         try {
-            const searchQueries = this.generateSearchQueries(analysis, refactoring, architecture);
+            // Analyze what the user actually needs to learn based on their code
+            const learningNeeds = this.analyzeLearningNeeds(codeChunks, analysis);
+            const searchQueries = this.generateContextualSearchQueries(analysis, learningNeeds, refactoring, architecture);
             const tutorials: TutorialRecommendation[] = [];
+
+            console.log('TutorAgent: Learning needs identified:', learningNeeds);
+            console.log('TutorAgent: Generated search queries:', searchQueries);
 
             // Search for tutorials for each query
             for (const query of searchQueries) {
@@ -62,6 +67,114 @@ export class TutorAgent {
             console.error('Failed to find tutorials:', error);
             return this.createFallbackTutorials(analysis);
         }
+    }
+
+    private analyzeLearningNeeds(codeChunks: CodeChunk[], analysis: CodebaseAnalysis): any {
+        const needs = {
+            advancedPatterns: [] as string[],
+            missingSkills: [] as string[],
+            optimizationAreas: [] as string[],
+            technologyDepth: {} as any
+        };
+
+        // Analyze code complexity and patterns
+        const complexityLevel = analysis.complexity_score;
+        
+        if (complexityLevel > 7) {
+            needs.advancedPatterns.push('code-architecture');
+            needs.advancedPatterns.push('design-patterns');
+        }
+        
+        // Analyze technology usage depth
+        analysis.key_technologies.forEach(tech => {
+            const techUsage = codeChunks.filter(chunk => 
+                chunk.content.toLowerCase().includes(tech.toLowerCase())
+            ).length;
+            
+            if (techUsage > 5) {
+                needs.technologyDepth[tech] = 'advanced';
+            } else {
+                needs.technologyDepth[tech] = 'intermediate';
+                needs.missingSkills.push(`advanced-${tech.toLowerCase()}`);
+            }
+        });
+
+        // Check for missing modern practices
+        const hasModernJS = codeChunks.some(chunk => 
+            chunk.content.includes('async') || chunk.content.includes('await')
+        );
+        if (!hasModernJS) {
+            needs.missingSkills.push('modern-javascript');
+        }
+
+        const hasTypeScript = analysis.key_technologies.includes('TypeScript');
+        if (!hasTypeScript && analysis.key_technologies.includes('JavaScript')) {
+            needs.missingSkills.push('typescript');
+        }
+
+        return needs;
+    }
+
+    private generateContextualSearchQueries(
+        analysis: CodebaseAnalysis, 
+        learningNeeds: any, 
+        refactoring?: RefactoringResults, 
+        architecture?: ArchitectureResults
+    ): Array<{terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}> {
+        const queries: Array<{terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}> = [];
+        
+        // Add queries based on identified learning needs
+        learningNeeds.missingSkills.forEach((skill: string) => {
+            if (skill.includes('typescript')) {
+                queries.push({
+                    terms: 'TypeScript migration tutorial advanced',
+                    context: 'general',
+                    difficulty: 'advanced'
+                });
+            } else if (skill.includes('modern-javascript')) {
+                queries.push({
+                    terms: 'modern JavaScript ES6+ tutorial',
+                    context: 'general',
+                    difficulty: 'intermediate'
+                });
+            } else if (skill.includes('advanced-react')) {
+                queries.push({
+                    terms: 'React advanced patterns hooks tutorial',
+                    context: 'general',
+                    difficulty: 'advanced'
+                });
+            }
+        });
+
+        // Add advanced patterns based on complexity
+        learningNeeds.advancedPatterns.forEach((pattern: string) => {
+            if (pattern === 'code-architecture') {
+                queries.push({
+                    terms: 'software architecture patterns tutorial',
+                    context: 'architecture',
+                    difficulty: 'advanced'
+                });
+            } else if (pattern === 'design-patterns') {
+                queries.push({
+                    terms: 'JavaScript design patterns tutorial',
+                    context: 'refactoring',
+                    difficulty: 'advanced'
+                });
+            }
+        });
+
+        // Technology-specific advanced tutorials
+        Object.entries(learningNeeds.technologyDepth).forEach(([tech, level]: [string, any]) => {
+            if (level === 'advanced') {
+                queries.push({
+                    terms: `${tech} advanced techniques tutorial`,
+                    context: 'general',
+                    difficulty: 'advanced'
+                });
+            }
+        });
+
+        return queries;
     }
 
     private generateSearchQueries(analysis: CodebaseAnalysis, refactoring?: RefactoringResults, architecture?: ArchitectureResults): Array<{terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}> {

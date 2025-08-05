@@ -23,9 +23,9 @@ export interface CodeChunk {
 }
 
 export class CodeIngestion {
-    private static readonly MAX_FILES = 100; // Limit to 100 files for faster analysis
-    private static readonly MAX_FILE_SIZE = 100 * 1024; // 100KB max file size
-    private static readonly MAX_CHUNKS_PER_FILE = 20; // Limit chunks per file
+    private static readonly MAX_FILES = 300; // Increased to analyze more files
+    private static readonly MAX_FILE_SIZE = 500 * 1024; // 500KB max file size (5x increase)
+    private static readonly MAX_CHUNKS_PER_FILE = 50; // More chunks per file for better analysis
     
     private static readonly DEFAULT_IGNORE_PATTERNS = [
         // Dependencies and package managers

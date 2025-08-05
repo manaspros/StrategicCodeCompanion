@@ -37,14 +37,18 @@ export class LibrarianAgent {
 
     async findRelevantLibraries(analysis: CodebaseAnalysis, codeChunks: CodeChunk[]): Promise<LibraryResults> {
         try {
-            const searchQueries = this.generateSearchQueries(analysis);
+            // Analyze actual code patterns to suggest relevant libraries
+            const codePatterns = this.analyzeCodePatterns(codeChunks, analysis);
+            const searchQueries = this.generateSmartSearchQueries(analysis, codePatterns);
             const recommendations: LibraryRecommendation[] = [];
+
+            console.log('LibrarianAgent: Generated search queries:', searchQueries);
 
             // Search for repositories for each query
             for (const query of searchQueries) {
                 try {
                     const repos = await this.searchGitHubRepos(query);
-                    const processedRepos = await this.processRepositories(repos, analysis);
+                    const processedRepos = await this.processRepositories(repos, analysis, codePatterns);
                     recommendations.push(...processedRepos);
                 } catch (error) {
                     console.warn(`Failed to search for "${query}":`, error);
@@ -63,6 +67,106 @@ export class LibrarianAgent {
             console.error('Failed to find relevant libraries:', error);
             return this.createFallbackRecommendations(analysis);
         }
+    }
+
+    private analyzeCodePatterns(codeChunks: CodeChunk[], analysis: CodebaseAnalysis): any {
+        const patterns = {
+            hasAnimation: false,
+            hasAPI: false,
+            hasDataVisualization: false,
+            hasFormHandling: false,
+            hasRouting: false,
+            hasStateManagement: false,
+            hasTesting: false,
+            hasAuthentication: false,
+            hasFileUpload: false,
+            hasRealTime: false,
+            missingFeatures: [] as string[]
+        };
+
+        // Analyze code for patterns
+        codeChunks.forEach(chunk => {
+            const content = chunk.content.toLowerCase();
+            
+            // Animation libraries
+            if (content.includes('gsap') || content.includes('animation') || content.includes('transition')) {
+                patterns.hasAnimation = true;
+            }
+            
+            // API handling
+            if (content.includes('fetch') || content.includes('axios') || content.includes('api')) {
+                patterns.hasAPI = true;
+            }
+            
+            // Forms
+            if (content.includes('form') || content.includes('input') || content.includes('validation')) {
+                patterns.hasFormHandling = true;
+            }
+            
+            // Routing
+            if (content.includes('router') || content.includes('route') || content.includes('navigate')) {
+                patterns.hasRouting = true;
+            }
+            
+            // State management
+            if (content.includes('usestate') || content.includes('redux') || content.includes('zustand')) {
+                patterns.hasStateManagement = true;
+            }
+            
+            // Testing
+            if (content.includes('test') || content.includes('spec') || content.includes('jest')) {
+                patterns.hasTesting = true;
+            }
+            
+            // Authentication
+            if (content.includes('auth') || content.includes('login') || content.includes('user')) {
+                patterns.hasAuthentication = true;
+            }
+        });
+
+        // Identify missing features that could be valuable
+        if (!patterns.hasTesting) patterns.missingFeatures.push('testing');
+        if (!patterns.hasAuthentication && analysis.project_type === 'web-app') patterns.missingFeatures.push('authentication');
+        if (!patterns.hasStateManagement && analysis.key_technologies.includes('React')) patterns.missingFeatures.push('state-management');
+
+        return patterns;
+    }
+
+    private generateSmartSearchQueries(analysis: CodebaseAnalysis, codePatterns: any): string[] {
+        const queries: string[] = [];
+        const tech = analysis.key_technologies.join(' ').toLowerCase();
+        
+        // Base on actual project needs and missing features
+        if (analysis.project_type === 'web-app') {
+            if (analysis.key_technologies.includes('React')) {
+                // React-specific enhancement libraries
+                queries.push('react performance optimization library');
+                queries.push('react animation library');
+                queries.push('react ui component library');
+                queries.push('react form validation library');
+                
+                if (!codePatterns.hasTesting) {
+                    queries.push('react testing library');
+                }
+                
+                if (!codePatterns.hasStateManagement) {
+                    queries.push('react state management zustand');
+                }
+            }
+            
+            // Web app enhancements
+            queries.push('web accessibility library');
+            queries.push('progressive web app library');
+            queries.push('web performance monitoring');
+            queries.push('user analytics library');
+        }
+        
+        // Add unique feature suggestions
+        queries.push('innovative web features library');
+        queries.push('modern web development tools');
+        queries.push('creative user experience library');
+        
+        return queries;
     }
 
     private generateSearchQueries(analysis: CodebaseAnalysis): string[] {
@@ -127,27 +231,92 @@ export class LibrarianAgent {
 
     private async searchGitHubRepos(query: string): Promise<any[]> {
         try {
+            // Enhanced search with better filters
+            const searchQuery = `${query} stars:>500 language:javascript language:typescript pushed:>2023-01-01`;
+            
             const response = await axios.get(`${LibrarianAgent.GITHUB_API_BASE}/search/repositories`, {
                 params: {
-                    q: `${query} stars:>100`,
+                    q: searchQuery,
                     sort: 'stars',
                     order: 'desc',
-                    per_page: 5
+                    per_page: 8
                 },
-                timeout: 10000
+                timeout: 15000,
+                headers: {
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Strategic-Code-Companion'
+                }
             });
 
+            console.log(`LibrarianAgent: Found ${response.data.items?.length || 0} repos for "${query}"`);
             return response.data.items || [];
         } catch (error) {
             if (axios.isAxiosError(error) && error.response?.status === 403) {
-                console.warn('GitHub API rate limit reached');
-                return [];
+                console.warn('GitHub API rate limit reached, using fallback data');
+                return this.getFallbackRepos(query);
             }
             throw error;
         }
     }
 
-    private async processRepositories(repos: any[], analysis: CodebaseAnalysis): Promise<LibraryRecommendation[]> {
+    private getFallbackRepos(query: string): any[] {
+        // Curated list of high-quality, innovative libraries
+        const fallbackLibraries = [
+            {
+                id: '1',
+                name: 'framer-motion',
+                description: 'A production-ready motion library for React. Utilize the power behind Framer, the best prototyping tool for teams.',
+                html_url: 'https://github.com/framer/motion',
+                stargazers_count: 22000,
+                forks_count: 820,
+                language: 'TypeScript',
+                updated_at: '2024-01-15T10:30:00Z',
+                license: { name: 'MIT License' }
+            },
+            {
+                id: '2',
+                name: 'react-hook-form',
+                description: 'Performant, flexible and extensible forms with easy validation.',
+                html_url: 'https://github.com/react-hook-form/react-hook-form',
+                stargazers_count: 39000,
+                forks_count: 1960,
+                language: 'TypeScript',
+                updated_at: '2024-01-10T14:20:00Z',
+                license: { name: 'MIT License' }
+            },
+            {
+                id: '3',
+                name: 'zustand',
+                description: 'A small, fast and scalable bearbones state-management solution using simplified flux principles.',
+                html_url: 'https://github.com/pmndrs/zustand',
+                stargazers_count: 35000,
+                forks_count: 1080,
+                language: 'TypeScript',
+                updated_at: '2024-01-12T09:15:00Z',
+                license: { name: 'MIT License' }
+            },
+            {
+                id: '4',
+                name: 'react-query',
+                description: 'Hooks for fetching, caching and updating asynchronous data in React.',
+                html_url: 'https://github.com/TanStack/query',
+                stargazers_count: 38000,
+                forks_count: 2600,
+                language: 'TypeScript',
+                updated_at: '2024-01-08T16:45:00Z',
+                license: { name: 'MIT License' }
+            }
+        ];
+
+        // Filter based on query relevance
+        return fallbackLibraries.filter(lib => {
+            const queryWords = query.toLowerCase().split(' ');
+            const libText = `${lib.name} ${lib.description}`.toLowerCase();
+            return queryWords.some(word => libText.includes(word));
+        }).slice(0, 3);
+    }
+
+    private async processRepositories(repos: any[], analysis: CodebaseAnalysis, codePatterns: any): Promise<LibraryRecommendation[]> {
         const recommendations: LibraryRecommendation[] = [];
 
         for (const repo of repos) {
@@ -197,28 +366,41 @@ export class LibrarianAgent {
 
     private calculateRelevanceScore(repo: any, analysis: CodebaseAnalysis): number {
         let score = 0;
-
-        // Language match
-        if (analysis.key_technologies.includes(repo.language?.toLowerCase())) {
-            score += 0.4;
+        
+        // Technology match boost
+        const repoText = `${repo.name} ${repo.description || ''}`.toLowerCase();
+        analysis.key_technologies.forEach(tech => {
+            if (repoText.includes(tech.toLowerCase())) {
+                score += 0.3;
+            }
+        });
+        
+        // Project type relevance
+        if (analysis.project_type === 'web-app') {
+            if (repoText.includes('react') || repoText.includes('web') || repoText.includes('ui')) {
+                score += 0.2;
+            }
         }
-
-        // Popularity (stars)
+        
+        // Popularity score (stars)
         if (repo.stargazers_count > 10000) score += 0.3;
-        else if (repo.stargazers_count > 1000) score += 0.2;
-        else if (repo.stargazers_count > 100) score += 0.1;
-
+        else if (repo.stargazers_count > 5000) score += 0.2;
+        else if (repo.stargazers_count > 1000) score += 0.1;
+        
         // Recent activity
         const lastUpdate = new Date(repo.updated_at);
         const monthsOld = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24 * 30);
         if (monthsOld < 3) score += 0.2;
         else if (monthsOld < 12) score += 0.1;
-
-        // Description quality
-        if (repo.description && repo.description.length > 50) {
-            score += 0.1;
+        
+        // Language match
+        if (repo.language && analysis.key_technologies.some(tech => 
+            tech.toLowerCase().includes(repo.language.toLowerCase()) || 
+            repo.language.toLowerCase().includes(tech.toLowerCase())
+        )) {
+            score += 0.2;
         }
-
+        
         return Math.min(score, 1.0);
     }
 
