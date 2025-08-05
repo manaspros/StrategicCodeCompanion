@@ -21,10 +21,10 @@ class MultiAgentOrchestrator {
             // Step 2: Run specialist agents in parallel for better performance
             console.log('Running specialist agents...');
             const [refactoring, architecture, libraries, tutorials] = await Promise.all([
-                this.refactorAgent.generateRefactoringSuggestions(analysis),
-                this.architectAgent.generateArchitectureSuggestions(analysis),
-                this.librarianAgent.findRelevantLibraries(analysis),
-                this.tutorAgent.findTutorials(analysis)
+                this.refactorAgent.generateRefactoringSuggestions(analysis, chunks),
+                this.architectAgent.generateArchitectureSuggestions(analysis, chunks),
+                this.librarianAgent.findRelevantLibraries(analysis, chunks),
+                this.tutorAgent.findTutorials(analysis, chunks)
             ]);
             return {
                 analysis,

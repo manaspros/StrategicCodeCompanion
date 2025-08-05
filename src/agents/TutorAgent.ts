@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { CodebaseAnalysis } from './main';
+import { CodebaseAnalysis, CodeChunk } from './main';
 import { RefactoringResults } from './RefactorAgent';
 import { ArchitectureResults } from './ArchitectAgent';
 
@@ -35,7 +35,7 @@ export class TutorAgent {
     
     constructor() {}
 
-    async findTutorials(analysis: CodebaseAnalysis, refactoring?: RefactoringResults, architecture?: ArchitectureResults): Promise<TutorialResults> {
+    async findTutorials(analysis: CodebaseAnalysis, codeChunks: CodeChunk[], refactoring?: RefactoringResults, architecture?: ArchitectureResults): Promise<TutorialResults> {
         try {
             const searchQueries = this.generateSearchQueries(analysis, refactoring, architecture);
             const tutorials: TutorialRecommendation[] = [];

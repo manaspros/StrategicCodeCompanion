@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { CodebaseAnalysis } from './main';
+import { CodebaseAnalysis, CodeChunk } from './main';
 
 export interface LibraryRecommendation {
     id: string;
@@ -35,7 +35,7 @@ export class LibrarianAgent {
     
     constructor() {}
 
-    async findRelevantLibraries(analysis: CodebaseAnalysis): Promise<LibraryResults> {
+    async findRelevantLibraries(analysis: CodebaseAnalysis, codeChunks: CodeChunk[]): Promise<LibraryResults> {
         try {
             const searchQueries = this.generateSearchQueries(analysis);
             const recommendations: LibraryRecommendation[] = [];

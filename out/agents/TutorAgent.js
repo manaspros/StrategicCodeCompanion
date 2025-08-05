@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TutorAgent = void 0;
 class TutorAgent {
     constructor() { }
-    async findTutorials(analysis, refactoring, architecture) {
+    async findTutorials(analysis, codeChunks, refactoring, architecture) {
         try {
             const searchQueries = this.generateSearchQueries(analysis, refactoring, architecture);
             const tutorials = [];

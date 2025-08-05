@@ -7,7 +7,7 @@ exports.LibrarianAgent = void 0;
 const axios_1 = __importDefault(require("axios"));
 class LibrarianAgent {
     constructor() { }
-    async findRelevantLibraries(analysis) {
+    async findRelevantLibraries(analysis, codeChunks) {
         try {
             const searchQueries = this.generateSearchQueries(analysis);
             const recommendations = [];

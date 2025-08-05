@@ -1,5 +1,5 @@
 import { LLMProvider } from '../llm/llmProvider';
-import { CodebaseAnalysis } from './main';
+import { CodebaseAnalysis, CodeChunk } from './main';
 
 export interface RefactoringSuggestion {
     id: string;
@@ -32,50 +32,62 @@ export class RefactorAgent {
         this.llmProvider = llmProvider;
     }
 
-    async generateRefactoringSuggestions(analysis: CodebaseAnalysis): Promise<RefactoringResults> {
+    async generateRefactoringSuggestions(analysis: CodebaseAnalysis, codeChunks: CodeChunk[]): Promise<RefactoringResults> {
         try {
+            // Analyze actual code patterns
+            const codePatterns = this.analyzeCodePatterns(codeChunks, analysis);
+            
             const systemPrompt = `You are a senior software engineer and refactoring expert. 
-            Based on the codebase analysis provided, generate specific, actionable refactoring suggestions.
+            Analyze the actual code samples provided and generate specific, actionable refactoring suggestions.
             
-            Focus on:
-            1. Code smells and anti-patterns
-            2. Performance improvements
-            3. Maintainability enhancements
-            4. Security vulnerabilities
-            5. Best practice violations
+            Focus on REAL patterns found in the code:
+            1. Actual code smells and anti-patterns you can see
+            2. Specific performance issues in the provided code
+            3. Concrete maintainability problems
+            4. Security vulnerabilities in the actual code
+            5. Technology-specific best practice violations
             
-            For each suggestion, provide concrete before/after code examples.
-            Prioritize suggestions based on impact and complexity.`;
+            IMPORTANT: Only suggest refactoring for patterns you can actually see in the provided code samples.
+            Don't give generic advice - be specific to this codebase.`;
 
-            const userPrompt = `Based on this codebase analysis, generate refactoring suggestions:
+            const userPrompt = `Based on this ACTUAL codebase analysis and code samples, generate specific refactoring suggestions:
 
-Analysis:
+PROJECT CONTEXT:
 - Summary: ${analysis.overall_summary}
 - Technologies: ${analysis.key_technologies.join(', ')}
-- Patterns: ${analysis.architectural_patterns.join(', ')}
-- Areas for refactoring: ${analysis.potential_areas_for_refactoring.join(', ')}
+- Project Type: ${analysis.project_type}
 - Complexity: ${analysis.complexity_score}/10
-- Quality metrics: Maintainability: ${analysis.code_quality_metrics.maintainability}/10, Readability: ${analysis.code_quality_metrics.readability}/10
 
-Please return your suggestions as a JSON object with this structure:
+ACTUAL CODE PATTERNS FOUND:
+${codePatterns}
+
+SPECIFIC AREAS IDENTIFIED FOR IMPROVEMENT:
+${analysis.potential_areas_for_refactoring.join('\n- ')}
+
+Please analyze the ACTUAL code samples above and return specific suggestions as JSON:
 {
     "suggestions": [
         {
             "id": "unique-id",
-            "title": "Short descriptive title",
-            "description": "Detailed explanation of the issue and why it should be refactored",
+            "title": "Specific refactoring for this codebase",
+            "description": "Detailed explanation based on actual code patterns found",
             "priority": "high|medium|low",
             "category": "performance|maintainability|readability|security|best-practices",
-            "beforeCode": "// Example of current problematic code",
-            "afterCode": "// Example of improved code",
-            "filePath": "optional/path/to/file.js",
+            "beforeCode": "// ACTUAL code from the codebase that needs refactoring",
+            "afterCode": "// Improved version of the ACTUAL code",
+            "filePath": "actual/file/path.js",
             "estimatedEffort": "low|medium|high",
-            "benefits": ["benefit1", "benefit2", "benefit3"]
+            "benefits": ["specific benefit1", "specific benefit2"]
         }
     ]
 }
 
-Provide 3-7 actionable suggestions with realistic code examples.`;
+REQUIREMENTS:
+- Only suggest refactoring for patterns actually found in the code
+- Use REAL code examples from the provided samples
+- Be specific to the ${analysis.key_technologies.join('/')} tech stack
+- Focus on the most impactful improvements for a ${analysis.project_type}
+- Provide 3-5 highly relevant suggestions`;
 
             const response = await this.llmProvider.generateResponse([
                 { role: 'system', content: systemPrompt },
@@ -105,6 +117,143 @@ Provide 3-7 actionable suggestions with realistic code examples.`;
             console.error('Failed to generate refactoring suggestions:', error);
             return this.createFallbackSuggestions(analysis);
         }
+    }
+
+    private analyzeCodePatterns(codeChunks: CodeChunk[], analysis: CodebaseAnalysis): string {
+        const patterns: string[] = [];
+        
+        // Analyze key code samples
+        const importantChunks = codeChunks
+            .filter(chunk => chunk.type === 'function' || chunk.type === 'class' || chunk.type === 'interface')
+            .slice(0, 8); // Limit to most important chunks
+        
+        patterns.push(`CODE SAMPLES FROM ${analysis.project_type.toUpperCase()}:`);
+        patterns.push('');
+        
+        importantChunks.forEach((chunk, index) => {
+            patterns.push(`${index + 1}. FILE: ${chunk.filePath}`);
+            patterns.push(`   TYPE: ${chunk.type.toUpperCase()}`);
+            if (chunk.metadata.name) {
+                patterns.push(`   NAME: ${chunk.metadata.name}`);
+            }
+            patterns.push(`   LANGUAGE: ${chunk.language}`);
+            patterns.push(`   CODE:`);
+            patterns.push('   ```' + chunk.language);
+            patterns.push(chunk.content.substring(0, 500) + (chunk.content.length > 500 ? '...' : ''));
+            patterns.push('   ```');
+            patterns.push('');
+        });
+        
+        // Add pattern analysis
+        patterns.push('DETECTED PATTERNS:');
+        
+        if (analysis.key_technologies.includes('React')) {
+            const reactPatterns = this.analyzeReactPatterns(codeChunks);
+            patterns.push(...reactPatterns);
+        }
+        
+        if (analysis.key_technologies.includes('JavaScript') || analysis.key_technologies.includes('TypeScript')) {
+            const jsPatterns = this.analyzeJavaScriptPatterns(codeChunks);
+            patterns.push(...jsPatterns);
+        }
+        
+        // Add file structure analysis
+        const fileTypes = new Map<string, number>();
+        const functionCount = codeChunks.filter(c => c.type === 'function').length;
+        const classCount = codeChunks.filter(c => c.type === 'class').length;
+        
+        patterns.push(`- Total Functions: ${functionCount}`);
+        patterns.push(`- Total Classes: ${classCount}`);
+        patterns.push(`- Complexity Score: ${analysis.complexity_score}/10`);
+        
+        return patterns.join('\n');
+    }
+    
+    private analyzeReactPatterns(codeChunks: CodeChunk[]): string[] {
+        const patterns: string[] = [];
+        
+        // Look for React-specific patterns
+        const reactChunks = codeChunks.filter(chunk => 
+            chunk.content.includes('React') || 
+            chunk.content.includes('useEffect') || 
+            chunk.content.includes('useState') ||
+            chunk.content.includes('jsx') ||
+            chunk.content.includes('tsx')
+        );
+        
+        if (reactChunks.length > 0) {
+            patterns.push('- React component patterns detected');
+            
+            // Check for hooks usage
+            const hooksUsage = reactChunks.some(chunk => 
+                chunk.content.includes('useEffect') || chunk.content.includes('useState')
+            );
+            if (hooksUsage) {
+                patterns.push('- React Hooks detected');
+            }
+            
+            // Check for class components
+            const classComponents = reactChunks.some(chunk => 
+                chunk.content.includes('extends React.Component') || 
+                chunk.content.includes('extends Component')
+            );
+            if (classComponents) {
+                patterns.push('- Class components detected (consider functional components)');
+            }
+            
+            // Check for prop drilling patterns
+            const propPatterns = reactChunks.filter(chunk => 
+                chunk.content.includes('props.') && chunk.content.split('props.').length > 3
+            );
+            if (propPatterns.length > 0) {
+                patterns.push('- Potential prop drilling detected');
+            }
+        }
+        
+        return patterns;
+    }
+    
+    private analyzeJavaScriptPatterns(codeChunks: CodeChunk[]): string[] {
+        const patterns: string[] = [];
+        
+        // Check for common JavaScript patterns
+        const jsChunks = codeChunks.filter(chunk => 
+            chunk.language === 'javascript' || chunk.language === 'typescript'
+        );
+        
+        if (jsChunks.length > 0) {
+            // Check for async/await vs callbacks
+            const hasCallbacks = jsChunks.some(chunk => 
+                chunk.content.includes('callback') || chunk.content.includes('.then(')
+            );
+            const hasAsyncAwait = jsChunks.some(chunk => 
+                chunk.content.includes('async') || chunk.content.includes('await')
+            );
+            
+            if (hasCallbacks && !hasAsyncAwait) {
+                patterns.push('- Callback-based async patterns (consider async/await)');
+            }
+            
+            // Check for error handling
+            const hasErrorHandling = jsChunks.some(chunk => 
+                chunk.content.includes('try') || chunk.content.includes('catch')
+            );
+            if (!hasErrorHandling) {
+                patterns.push('- Limited error handling detected');
+            }
+            
+            // Check for performance patterns
+            const hasPerformanceIssues = jsChunks.some(chunk => 
+                chunk.content.includes('document.querySelector') ||
+                chunk.content.includes('for (var ') ||
+                chunk.content.includes('var ')
+            );
+            if (hasPerformanceIssues) {
+                patterns.push('- Potential performance optimization opportunities');
+            }
+        }
+        
+        return patterns;
     }
 
     private generateSummary(suggestions: RefactoringSuggestion[]) {

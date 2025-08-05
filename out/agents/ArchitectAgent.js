@@ -5,52 +5,61 @@ class ArchitectAgent {
     constructor(llmProvider) {
         this.llmProvider = llmProvider;
     }
-    async generateArchitectureSuggestions(analysis) {
+    async generateArchitectureSuggestions(analysis, codeChunks) {
         try {
+            // Analyze existing architecture patterns
+            const architectureAnalysis = this.analyzeExistingArchitecture(codeChunks, analysis);
             const systemPrompt = `You are a senior software architect with expertise in system design and product development.
-            Based on the codebase analysis, suggest 3-5 strategic new features that would enhance the project.
+            Based on the ACTUAL codebase structure and patterns, suggest specific architectural improvements and features.
             
-            Consider:
-            1. Natural evolution of the current architecture
-            2. User value and business impact
-            3. Technical feasibility
-            4. Integration with existing patterns
-            5. Market trends and best practices
+            IMPORTANT REQUIREMENTS:
+            1. Only suggest features that make sense for THIS specific project type and tech stack
+            2. Base suggestions on ACTUAL code patterns you can see
+            3. Consider the existing architecture and build upon it
+            4. Provide implementable suggestions, not generic ones
+            5. Focus on features that solve real user problems for this type of application
             
-            Focus on features that align with the project's purpose and complement existing functionality.`;
-            const userPrompt = `Based on this codebase analysis, suggest new features that would enhance the project:
+            DO NOT suggest generic features - be specific to the project context.`;
+            const userPrompt = `Analyze this ACTUAL codebase and suggest specific architectural improvements:
 
-Analysis:
-- Project Summary: ${analysis.overall_summary}
+PROJECT CONTEXT:
+- Summary: ${analysis.overall_summary}
 - Type: ${analysis.project_type}
 - Technologies: ${analysis.key_technologies.join(', ')}
-- Architectural Patterns: ${analysis.architectural_patterns.join(', ')}
-- Current Complexity: ${analysis.complexity_score}/10
-- Quality Metrics: Maintainability: ${analysis.code_quality_metrics.maintainability}/10
+- Complexity: ${analysis.complexity_score}/10
 
-Please return your suggestions as a JSON object with this structure:
+ACTUAL ARCHITECTURE ANALYSIS:
+${architectureAnalysis}
+
+Based on the ACTUAL code structure above, suggest specific features that would:
+1. Build naturally on the existing architecture
+2. Solve real problems for ${analysis.project_type} users
+3. Leverage the ${analysis.key_technologies.join('/')} tech stack effectively
+4. Improve upon the identified areas for enhancement
+
+Return as JSON:
 {
     "features": [
         {
-            "id": "unique-feature-id",
-            "title": "Feature Name",
-            "description": "Detailed description of what this feature does and why it's valuable",
+            "id": "specific-feature-id",
+            "title": "Contextual Feature Name",
+            "description": "Specific description based on actual code patterns",
             "category": "user-experience|performance|security|functionality|developer-experience",
             "priority": "high|medium|low",
             "complexity": "low|medium|high",
             "estimatedTimeWeeks": 1-12,
             "implementationOverview": {
-                "steps": ["step1", "step2", "step3"],
-                "technologies": ["tech1", "tech2"],
-                "considerations": ["consideration1", "consideration2"]
+                "steps": ["specific implementation steps"],
+                "technologies": ["actual technologies from the stack"],
+                "considerations": ["real technical considerations"]
             },
-            "benefits": ["benefit1", "benefit2", "benefit3"],
-            "prerequisites": ["prereq1", "prereq2"]
+            "benefits": ["specific benefits for this project type"],
+            "prerequisites": ["actual prerequisites from the codebase"]
         }
     ]
 }
 
-Provide 3-5 strategic, well-thought-out feature suggestions.`;
+Provide 3-4 highly relevant, implementation-ready suggestions.`;
             const response = await this.llmProvider.generateResponse([
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
@@ -76,6 +85,118 @@ Provide 3-5 strategic, well-thought-out feature suggestions.`;
             console.error('Failed to generate architecture suggestions:', error);
             return this.createFallbackSuggestions(analysis);
         }
+    }
+    analyzeExistingArchitecture(codeChunks, analysis) {
+        const archAnalysis = [];
+        // Analyze file structure and patterns
+        const fileStructure = this.analyzeFileStructure(codeChunks);
+        archAnalysis.push('FILE STRUCTURE:');
+        archAnalysis.push(...fileStructure);
+        archAnalysis.push('');
+        // Analyze component patterns (for UI projects)
+        if (analysis.key_technologies.includes('React') || analysis.key_technologies.includes('Vue') || analysis.key_technologies.includes('Angular')) {
+            const componentPatterns = this.analyzeComponentPatterns(codeChunks, analysis);
+            archAnalysis.push('COMPONENT ARCHITECTURE:');
+            archAnalysis.push(...componentPatterns);
+            archAnalysis.push('');
+        }
+        // Analyze data flow and state management
+        const dataFlow = this.analyzeDataFlow(codeChunks, analysis);
+        archAnalysis.push('DATA FLOW PATTERNS:');
+        archAnalysis.push(...dataFlow);
+        archAnalysis.push('');
+        // Identify missing architectural elements
+        const gaps = this.identifyArchitecturalGaps(codeChunks, analysis);
+        archAnalysis.push('ARCHITECTURAL OPPORTUNITIES:');
+        archAnalysis.push(...gaps);
+        return archAnalysis.join('\n');
+    }
+    analyzeFileStructure(codeChunks) {
+        const structure = [];
+        // Get unique directories
+        const directories = new Set();
+        codeChunks.forEach(chunk => {
+            const dir = chunk.filePath.split('/').slice(0, -1).join('/');
+            if (dir)
+                directories.add(dir);
+        });
+        structure.push(`- Total code files analyzed: ${codeChunks.length}`);
+        structure.push(`- Directory structure depth: ${Array.from(directories).length} directories`);
+        // Analyze file types distribution
+        const fileTypes = new Map();
+        codeChunks.forEach(chunk => {
+            const ext = chunk.filePath.split('.').pop() || 'unknown';
+            fileTypes.set(ext, (fileTypes.get(ext) || 0) + 1);
+        });
+        structure.push('- File type distribution:');
+        Array.from(fileTypes.entries()).forEach(([ext, count]) => {
+            structure.push(`  * .${ext}: ${count} files`);
+        });
+        return structure;
+    }
+    analyzeComponentPatterns(codeChunks, analysis) {
+        const patterns = [];
+        const componentChunks = codeChunks.filter(chunk => chunk.type === 'function' || chunk.type === 'class');
+        patterns.push(`- Components/Functions found: ${componentChunks.length}`);
+        if (analysis.key_technologies.includes('React')) {
+            // Look for React patterns
+            const reactHooks = codeChunks.filter(chunk => chunk.content.includes('useState') ||
+                chunk.content.includes('useEffect') ||
+                chunk.content.includes('useContext'));
+            patterns.push(`- React hooks usage: ${reactHooks.length} components using hooks`);
+            const propPatterns = codeChunks.filter(chunk => chunk.content.includes('props.'));
+            patterns.push(`- Components with props: ${propPatterns.length}`);
+        }
+        return patterns;
+    }
+    analyzeDataFlow(codeChunks, analysis) {
+        const dataFlow = [];
+        // Look for API calls
+        const apiCalls = codeChunks.filter(chunk => chunk.content.includes('fetch(') ||
+            chunk.content.includes('axios') ||
+            chunk.content.includes('api.'));
+        dataFlow.push(`- API integration points: ${apiCalls.length}`);
+        // Look for state management
+        const stateManagement = codeChunks.filter(chunk => chunk.content.includes('useState') ||
+            chunk.content.includes('Redux') ||
+            chunk.content.includes('Zustand') ||
+            chunk.content.includes('store'));
+        dataFlow.push(`- State management usage: ${stateManagement.length} files`);
+        // Look for data processing
+        const dataProcessing = codeChunks.filter(chunk => chunk.content.includes('.map(') ||
+            chunk.content.includes('.filter(') ||
+            chunk.content.includes('.reduce('));
+        dataFlow.push(`- Data transformation patterns: ${dataProcessing.length} files`);
+        return dataFlow;
+    }
+    identifyArchitecturalGaps(codeChunks, analysis) {
+        const gaps = [];
+        // Check for testing
+        const testFiles = codeChunks.filter(chunk => chunk.filePath.includes('test') ||
+            chunk.filePath.includes('spec') ||
+            chunk.content.includes('describe(') ||
+            chunk.content.includes('it('));
+        if (testFiles.length === 0) {
+            gaps.push('- Missing: Automated testing infrastructure');
+        }
+        // Check for error handling
+        const errorHandling = codeChunks.filter(chunk => chunk.content.includes('try') ||
+            chunk.content.includes('catch') ||
+            chunk.content.includes('Error'));
+        if (errorHandling.length < codeChunks.length * 0.2) {
+            gaps.push('- Opportunity: Enhanced error handling and logging');
+        }
+        // Check for TypeScript (if JavaScript project)
+        if (analysis.key_technologies.includes('JavaScript') && !analysis.key_technologies.includes('TypeScript')) {
+            gaps.push('- Opportunity: TypeScript adoption for better type safety');
+        }
+        // Project-specific opportunities
+        if (analysis.project_type === 'web-app') {
+            gaps.push('- Opportunity: Performance monitoring and analytics');
+            gaps.push('- Opportunity: Progressive Web App (PWA) features');
+            gaps.push('- Opportunity: Accessibility improvements');
+        }
+        return gaps;
     }
     generateSummary(features) {
         const byCategory = {};
