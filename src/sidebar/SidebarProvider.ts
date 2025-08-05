@@ -5,6 +5,8 @@ import { LLMProviderFactory } from '../llm/llmProvider';
 import { CodeIngestion } from '../rag/ingestion';
 import { CodeEmbeddingService } from '../rag/embedding';
 import { MultiAgentOrchestrator, AgentResults } from '../agents/main';
+import { CodeFixService } from '../services/CodeFixService';
+import { FileEditService } from '../services/FileEditService';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'strategic-code-companion.sidebar';
@@ -12,6 +14,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private keyManager: KeyManager;
     private isAnalyzing = false;
+    private codeFixService?: CodeFixService;
+    private fileEditService?: FileEditService;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -83,6 +87,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         libraries: { recommendations: [], summary: { totalRecommendations: 0, byCategory: {}, highRelevance: 0, easyIntegration: 0 } },
                         tutorials: { tutorials: [], summary: { totalTutorials: 0, byDifficulty: {}, byPlatform: {}, averageRelevance: 0 } }
                     });
+                    break;
+                case 'fixRefactoring':
+                    await this.handleFixRefactoring(data.suggestionId, data.suggestion);
+                    break;
+                case 'implementFeature':
+                    await this.handleImplementFeature(data.featureId, data.feature);
                     break;
             }
         });
@@ -183,6 +193,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 const orchestrator = new MultiAgentOrchestrator(llmProvider);
                 const results = await orchestrator.analyzeCodebase(chunks.slice(0, 100)); // Increased analysis chunk limit
                 console.log('Strategic Code Companion: Analysis completed successfully');
+
+                // Initialize AI editing services
+                this.codeFixService = new CodeFixService(llmProvider, workspaceRoot);
+                this.fileEditService = new FileEditService(workspaceRoot);
+                await this.fileEditService.loadBackupsFromDisk();
 
                 // Step 4: Display results
                 this.showResults(results);
@@ -311,6 +326,107 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             });
         } else {
             console.error('Strategic Code Companion: _view is null, cannot show results');
+        }
+    }
+
+    private async handleFixRefactoring(suggestionId: string, suggestion: any) {
+        if (!this.codeFixService || !this.fileEditService) {
+            vscode.window.showErrorMessage('AI editing services not initialized. Please run analysis first.');
+            return;
+        }
+
+        try {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Applying refactoring: ${suggestion.title}`,
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ message: 'Generating code fixes...' });
+                
+                // Generate the code fixes
+                const fixes = await this.codeFixService!.generateRefactoringFix(suggestion);
+                
+                progress.report({ message: 'Previewing changes...' });
+                
+                // Show diff preview and get user confirmation
+                const shouldApply = await this.fileEditService!.previewChanges(fixes);
+                
+                if (!shouldApply) {
+                    vscode.window.showInformationMessage('Refactoring cancelled by user.');
+                    return;
+                }
+                
+                progress.report({ message: 'Applying changes...' });
+                
+                // Apply the fixes
+                const result = await this.fileEditService!.applyFixes(fixes, `Refactoring: ${suggestion.title}`);
+                
+                if (result.success) {
+                    vscode.window.showInformationMessage(
+                        `Successfully applied refactoring: ${suggestion.title}`
+                    );
+                } else {
+                    vscode.window.showWarningMessage(
+                        `Refactoring partially applied. ${result.failedFixes.length} changes failed.`
+                    );
+                }
+            });
+        } catch (error) {
+            console.error('Failed to apply refactoring:', error);
+            vscode.window.showErrorMessage(`Failed to apply refactoring: ${error}`);
+        }
+    }
+
+    private async handleImplementFeature(featureId: string, feature: any) {
+        if (!this.codeFixService || !this.fileEditService) {
+            vscode.window.showErrorMessage('AI editing services not initialized. Please run analysis first.');
+            return;
+        }
+
+        try {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Implementing feature: ${feature.title}`,
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ message: 'Generating feature implementation...' });
+                
+                // Generate the feature implementation
+                const fixes = await this.codeFixService!.generateFeatureImplementation(feature);
+                
+                if (fixes.length === 0) {
+                    vscode.window.showWarningMessage('No code changes generated for this feature.');
+                    return;
+                }
+                
+                progress.report({ message: 'Previewing changes...' });
+                
+                // Show diff preview and get user confirmation
+                const shouldApply = await this.fileEditService!.previewChanges(fixes);
+                
+                if (!shouldApply) {
+                    vscode.window.showInformationMessage('Feature implementation cancelled by user.');
+                    return;
+                }
+                
+                progress.report({ message: 'Implementing feature...' });
+                
+                // Apply the fixes
+                const result = await this.fileEditService!.applyFixes(fixes, `Implement feature: ${feature.title}`);
+                
+                if (result.success) {
+                    vscode.window.showInformationMessage(
+                        `Successfully implemented feature: ${feature.title}. Created ${result.appliedFixes.length} files/changes.`
+                    );
+                } else {
+                    vscode.window.showWarningMessage(
+                        `Feature partially implemented. ${result.failedFixes.length} changes failed.`
+                    );
+                }
+            });
+        } catch (error) {
+            console.error('Failed to implement feature:', error);
+            vscode.window.showErrorMessage(`Failed to implement feature: ${error}`);
         }
     }
 
@@ -1036,6 +1152,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                             \${suggestion.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
                         </ul>
                     </div>
+                    
+                    <div class="action-buttons" style="margin-top: 16px;">
+                        <button class="fix-it-btn" onclick="fixRefactoring('\${suggestion.id}', \${JSON.stringify(suggestion).replace(/"/g, '&quot;')})" 
+                                style="background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                            🔧 Fix It
+                        </button>
+                    </div>
                 </div>
             \`).join('');
             
@@ -1073,6 +1196,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         <ul>
                             \${feature.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
                         </ul>
+                    </div>
+                    
+                    <div class="action-buttons" style="margin-top: 16px;">
+                        <button class="implement-btn" onclick="implementFeature('\${feature.id}', \${JSON.stringify(feature).replace(/"/g, '&quot;')})" 
+                                style="background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                            🚀 Implement Feature
+                        </button>
                     </div>
                 </div>
             \`).join('');
@@ -1173,6 +1303,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.postMessage({
                 type: 'openUrl',
                 url: url
+            });
+        }
+        
+        function fixRefactoring(suggestionId, suggestion) {
+            console.log('Fixing refactoring:', suggestionId);
+            vscode.postMessage({
+                type: 'fixRefactoring',
+                suggestionId: suggestionId,
+                suggestion: suggestion
+            });
+        }
+        
+        function implementFeature(featureId, feature) {
+            console.log('Implementing feature:', featureId);
+            vscode.postMessage({
+                type: 'implementFeature',
+                featureId: featureId,
+                feature: feature
             });
         }
         
