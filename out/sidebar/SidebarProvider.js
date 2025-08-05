@@ -365,6 +365,326 @@ class SidebarProvider {
             font-size: 16px;
             margin: 20px 0;
         }
+        
+        /* Professional Results Styling */
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        
+        .back-button {
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: 1px solid var(--vscode-button-border);
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .back-button:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
+        }
+        
+        /* Tabs Styling */
+        .tabs-container {
+            width: 100%;
+        }
+        
+        .tabs {
+            display: flex;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            margin-bottom: 20px;
+        }
+        
+        .tab-button {
+            background: transparent;
+            color: var(--vscode-foreground);
+            border: none;
+            padding: 12px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .tab-button:hover {
+            background: var(--vscode-list-hoverBackground);
+        }
+        
+        .tab-button.active {
+            border-bottom-color: var(--vscode-focusBorder);
+            background: var(--vscode-tab-activeBackground);
+            color: var(--vscode-tab-activeForeground);
+        }
+        
+        .tab-panel {
+            display: none;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        .tab-panel.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Card Styling */
+        .analysis-card {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .card-icon {
+            font-size: 24px;
+            margin-right: 12px;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0;
+            color: var(--vscode-foreground);
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+        
+        .metric-item {
+            background: var(--vscode-input-background);
+            padding: 16px;
+            border-radius: 6px;
+            border: 1px solid var(--vscode-input-border);
+        }
+        
+        .metric-label {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        
+        .metric-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--vscode-foreground);
+        }
+        
+        .tech-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 12px 0;
+        }
+        
+        .tech-tag {
+            background: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        /* Suggestion Cards */
+        .suggestion-card {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            position: relative;
+        }
+        
+        .priority-high { border-left: 4px solid #f14c4c; }
+        .priority-medium { border-left: 4px solid #ffcc02; }
+        .priority-low { border-left: 4px solid #89d185; }
+        
+        .suggestion-header {
+            display: flex;
+            justify-content: between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .priority-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .priority-high .priority-badge { background: #f14c4c; color: white; }
+        .priority-medium .priority-badge { background: #ffcc02; color: black; }
+        .priority-low .priority-badge { background: #89d185; color: black; }
+        
+        .code-block {
+            background: var(--vscode-textCodeBlock-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            padding: 16px;
+            margin: 12px 0;
+            font-family: var(--vscode-editor-font-family);
+            font-size: 13px;
+            overflow-x: auto;
+        }
+        
+        .before-after {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 16px 0;
+        }
+        
+        @media (max-width: 600px) {
+            .before-after {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Library Cards */
+        .library-card {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .library-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .library-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        
+        .library-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            margin: 8px 0;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .link-preview {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            margin: 8px 8px 8px 0;
+            transition: background 0.2s ease;
+        }
+        
+        .link-preview:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+        
+        /* Tutorial Cards */
+        .tutorial-card {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: transform 0.2s ease;
+        }
+        
+        .tutorial-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        }
+        
+        .tutorial-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 12px 0;
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+        }
+        
+        .difficulty-badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .difficulty-beginner { background: #89d185; color: black; }
+        .difficulty-intermediate { background: #ffcc02; color: black; }
+        .difficulty-advanced { background: #f14c4c; color: white; }
+        
+        .rating-stars {
+            color: #ffcc02;
+        }
+        
+        .video-preview {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: var(--vscode-input-background);
+            border-radius: 6px;
+            margin: 12px 0;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .video-preview:hover {
+            background: var(--vscode-list-hoverBackground);
+        }
+        
+        .video-thumbnail {
+            width: 60px;
+            height: 45px;
+            background: var(--vscode-button-background);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
     </style>
 </head>
 <body>
@@ -428,12 +748,37 @@ class SidebarProvider {
         </div>
         
         <div id="results" style="display: none;">
-            <div class="header">
+            <div class="results-header">
                 <h2>✅ Analysis Complete!</h2>
-                <button id="back-btn" style="float: right;">← Back</button>
+                <button id="back-btn" class="back-button">← Back</button>
             </div>
-            <div id="results-content">
-                <p>Results will appear here...</p>
+            
+            <div class="tabs-container">
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="overview">📊 Overview</button>
+                    <button class="tab-button" data-tab="refactoring">🔧 Refactoring</button>
+                    <button class="tab-button" data-tab="architecture">🏗️ Architecture</button>
+                    <button class="tab-button" data-tab="libraries">📚 Libraries</button>
+                    <button class="tab-button" data-tab="tutorials">🎓 Tutorials</button>
+                </div>
+                
+                <div class="tab-content">
+                    <div id="overview-content" class="tab-panel active">
+                        <div id="overview-data"></div>
+                    </div>
+                    <div id="refactoring-content" class="tab-panel">
+                        <div id="refactoring-data"></div>
+                    </div>
+                    <div id="architecture-content" class="tab-panel">
+                        <div id="architecture-data"></div>
+                    </div>
+                    <div id="libraries-content" class="tab-panel">
+                        <div id="libraries-data"></div>
+                    </div>
+                    <div id="tutorials-content" class="tab-panel">
+                        <div id="tutorials-data"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -530,7 +875,287 @@ class SidebarProvider {
             if (backBtn) {
                 backBtn.addEventListener('click', showMain);
             }
+            
+            // Tab switching functionality
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.classList.contains('tab-button')) {
+                    const targetTab = e.target.getAttribute('data-tab');
+                    switchTab(targetTab);
+                }
+            });
         });
+        
+        function switchTab(tabName) {
+            // Remove active class from all tabs and panels
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+            
+            // Add active class to clicked tab and corresponding panel
+            document.querySelector(\`[data-tab="\${tabName}"]\`).classList.add('active');
+            document.getElementById(\`\${tabName}-content\`).classList.add('active');
+        }
+        
+        function displayProfessionalResults(results) {
+            console.log('Displaying professional results:', results);
+            
+            // Display Overview
+            displayOverview(results.analysis);
+            
+            // Display Refactoring suggestions
+            displayRefactoring(results.refactoring);
+            
+            // Display Architecture suggestions
+            displayArchitecture(results.architecture);
+            
+            // Display Library recommendations
+            displayLibraries(results.libraries);
+            
+            // Display Tutorials
+            displayTutorials(results.tutorials);
+        }
+        
+        function displayOverview(analysis) {
+            const container = document.getElementById('overview-data');
+            
+            const html = \`
+                <div class="analysis-card">
+                    <div class="card-header">
+                        <span class="card-icon">📊</span>
+                        <h3 class="card-title">Project Overview</h3>
+                    </div>
+                    <p>\${analysis.overall_summary}</p>
+                    
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-label">Complexity Score</div>
+                            <div class="metric-value">\${analysis.complexity_score}/10</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Maintainability</div>
+                            <div class="metric-value">\${analysis.code_quality_metrics.maintainability}/10</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Readability</div>
+                            <div class="metric-value">\${analysis.code_quality_metrics.readability}/10</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Testability</div>
+                            <div class="metric-value">\${analysis.code_quality_metrics.testability}/10</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="analysis-card">
+                    <div class="card-header">
+                        <span class="card-icon">🛠️</span>
+                        <h3 class="card-title">Technologies Used</h3>
+                    </div>
+                    <div class="tech-tags">
+                        \${analysis.key_technologies.map(tech => \`<span class="tech-tag">\${tech}</span>\`).join('')}
+                    </div>
+                </div>
+                
+                <div class="analysis-card">
+                    <div class="card-header">
+                        <span class="card-icon">🏗️</span>
+                        <h3 class="card-title">Architecture Patterns</h3>
+                    </div>
+                    <div class="tech-tags">
+                        \${analysis.architectural_patterns.map(pattern => \`<span class="tech-tag">\${pattern}</span>\`).join('')}
+                    </div>
+                </div>
+                
+                <div class="analysis-card">
+                    <div class="card-header">
+                        <span class="card-icon">⚠️</span>
+                        <h3 class="card-title">Areas for Improvement</h3>
+                    </div>
+                    <ul>
+                        \${analysis.potential_areas_for_refactoring.map(area => \`<li>\${area}</li>\`).join('')}
+                    </ul>
+                </div>
+            \`;
+            
+            container.innerHTML = html;
+        }
+        
+        function displayRefactoring(refactoring) {
+            const container = document.getElementById('refactoring-data');
+            
+            if (!refactoring.suggestions || refactoring.suggestions.length === 0) {
+                container.innerHTML = '<p>No refactoring suggestions available.</p>';
+                return;
+            }
+            
+            const html = refactoring.suggestions.map(suggestion => \`
+                <div class="suggestion-card priority-\${suggestion.priority}">
+                    <div class="suggestion-header">
+                        <h4>\${suggestion.title}</h4>
+                        <span class="priority-badge">\${suggestion.priority}</span>
+                    </div>
+                    <p>\${suggestion.description}</p>
+                    
+                    <div class="before-after">
+                        <div>
+                            <h5>❌ Before:</h5>
+                            <div class="code-block">\${suggestion.beforeCode}</div>
+                        </div>
+                        <div>
+                            <h5>✅ After:</h5>
+                            <div class="code-block">\${suggestion.afterCode}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="suggestion-meta">
+                        <span><strong>Effort:</strong> \${suggestion.estimatedEffort}</span>
+                        <span><strong>Category:</strong> \${suggestion.category}</span>
+                    </div>
+                    
+                    <div class="benefits">
+                        <strong>Benefits:</strong>
+                        <ul>
+                            \${suggestion.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            \`).join('');
+            
+            container.innerHTML = html;
+        }
+        
+        function displayArchitecture(architecture) {
+            const container = document.getElementById('architecture-data');
+            
+            if (!architecture.features || architecture.features.length === 0) {
+                container.innerHTML = '<p>No architecture suggestions available.</p>';
+                return;
+            }
+            
+            const html = architecture.features.map(feature => \`
+                <div class="analysis-card">
+                    <div class="card-header">
+                        <span class="card-icon">🏗️</span>
+                        <h3 class="card-title">\${feature.title}</h3>
+                    </div>
+                    <p>\${feature.description}</p>
+                    
+                    <div class="feature-meta">
+                        <span class="priority-badge priority-\${feature.priority}">\${feature.priority}</span>
+                        <span><strong>Complexity:</strong> \${feature.complexity}</span>
+                        <span><strong>Estimated Time:</strong> \${feature.estimatedTimeWeeks} weeks</span>
+                    </div>
+                    
+                    <div class="tech-tags">
+                        \${feature.implementationOverview.technologies.map(tech => \`<span class="tech-tag">\${tech}</span>\`).join('')}
+                    </div>
+                    
+                    <div class="benefits">
+                        <strong>Benefits:</strong>
+                        <ul>
+                            \${feature.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            \`).join('');
+            
+            container.innerHTML = html;
+        }
+        
+        function displayLibraries(libraries) {
+            const container = document.getElementById('libraries-data');
+            
+            if (!libraries.recommendations || libraries.recommendations.length === 0) {
+                container.innerHTML = '<p>No library recommendations available.</p>';
+                return;
+            }
+            
+            const html = libraries.recommendations.map(lib => \`
+                <div class="library-card">
+                    <div class="library-header">
+                        <h4>\${lib.name}</h4>
+                        <span class="tech-tag">\${lib.language}</span>
+                    </div>
+                    <p>\${lib.description}</p>
+                    
+                    <div class="library-stats">
+                        <div class="stat-item">
+                            <span>⭐</span>
+                            <span>\${lib.stars.toLocaleString()}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>🍴</span>
+                            <span>\${lib.forks.toLocaleString()}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>📅</span>
+                            <span>\${new Date(lib.lastUpdated).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="benefits">
+                        <strong>Benefits:</strong>
+                        <ul>
+                            \${lib.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <div class="library-links">
+                        <a href="\${lib.githubUrl}" class="link-preview" onclick="openUrl('\${lib.githubUrl}')">
+                            📱 GitHub
+                        </a>
+                        \${lib.npmUrl ? \`<a href="\${lib.npmUrl}" class="link-preview" onclick="openUrl('\${lib.npmUrl}')">📦 NPM</a>\` : ''}
+                    </div>
+                </div>
+            \`).join('');
+            
+            container.innerHTML = html;
+        }
+        
+        function displayTutorials(tutorials) {
+            const container = document.getElementById('tutorials-data');
+            
+            if (!tutorials.tutorials || tutorials.tutorials.length === 0) {
+                container.innerHTML = '<p>No tutorials available.</p>';
+                return;
+            }
+            
+            const html = tutorials.tutorials.map(tutorial => {
+                const stars = '★'.repeat(Math.floor(tutorial.rating)) + '☆'.repeat(5 - Math.floor(tutorial.rating));
+                
+                return \`
+                    <div class="tutorial-card">
+                        <h4>\${tutorial.title}</h4>
+                        <p>\${tutorial.description}</p>
+                        
+                        <div class="tutorial-meta">
+                            <span class="difficulty-badge difficulty-\${tutorial.difficulty}">\${tutorial.difficulty}</span>
+                            <span class="rating-stars">\${stars} (\${tutorial.rating.toFixed(1)})</span>
+                            <span>\${tutorial.views.toLocaleString()} views</span>
+                        </div>
+                        
+                        <div class="video-preview" onclick="openUrl('\${tutorial.url}')">
+                            <div class="video-thumbnail">▶️</div>
+                            <div>
+                                <div><strong>\${tutorial.author}</strong></div>
+                                <div>\${tutorial.duration} • \${tutorial.platform}</div>
+                                <div class="tech-tags">
+                                    \${tutorial.topics.map(topic => \`<span class="tech-tag">\${topic}</span>\`).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                \`;
+            }).join('');
+            
+            container.innerHTML = html;
+        }
+        
+        function openUrl(url) {
+            vscode.postMessage({
+                type: 'openUrl',
+                url: url
+            });
+        }
         
         // Listen for messages from extension
         window.addEventListener('message', event => {
@@ -572,9 +1197,8 @@ class SidebarProvider {
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('results').style.display = 'block';
                     
-                    // Display basic results
-                    const resultsContent = document.getElementById('results-content');
-                    resultsContent.innerHTML = '<h3>Analysis Summary:</h3><pre>' + JSON.stringify(message.results, null, 2) + '</pre>';
+                    // Display professional results
+                    displayProfessionalResults(message.results);
                     break;
                     
                 default:
