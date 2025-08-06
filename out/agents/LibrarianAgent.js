@@ -5,19 +5,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LibrarianAgent = void 0;
 const axios_1 = __importDefault(require("axios"));
+const RAGContextBuilder_1 = require("../utils/RAGContextBuilder");
 class LibrarianAgent {
-    constructor() { }
+    constructor(llmProvider) {
+        this.llmProvider = llmProvider;
+    }
     async findRelevantLibraries(analysis, codeChunks) {
         try {
-            // Step 1: Analyze functionality gaps and potential improvements
-            const functionalityAnalysis = await this.analyzeFunctionalityGaps(analysis, codeChunks);
-            console.log('LibrarianAgent: Functionality analysis:', functionalityAnalysis);
-            // Step 2: Generate targeted searches based on functionality needs
-            const functionalityQueries = this.generateFunctionalityBasedQueries(functionalityAnalysis, analysis);
-            console.log('LibrarianAgent: Functionality-based queries:', functionalityQueries);
+            // Step 1: Use LLM to analyze codebase and generate intelligent search queries
+            const intelligentQueries = await this.generateIntelligentQueries(analysis, codeChunks);
+            console.log('LibrarianAgent: LLM-generated intelligent queries:', intelligentQueries);
             const recommendations = [];
-            // Search for libraries that add specific functionality
-            for (const query of functionalityQueries) {
+            // Search for libraries using LLM-generated queries
+            for (const query of intelligentQueries) {
                 try {
                     const repos = await this.searchGitHubRepos(query.searchTerm);
                     const processedRepos = await this.processRepositories(repos, analysis, query);
@@ -37,16 +37,137 @@ class LibrarianAgent {
         }
         catch (error) {
             console.error('Failed to find relevant libraries:', error);
-            return {
-                recommendations: [],
-                summary: {
-                    totalRecommendations: 0,
-                    byCategory: {},
-                    highRelevance: 0,
-                    easyIntegration: 0
-                }
-            };
+            // Fallback to basic analysis if LLM fails
+            return this.getFallbackLibraryResults(analysis, codeChunks);
         }
+    }
+    async generateIntelligentQueries(analysis, codeChunks) {
+        if (!this.llmProvider) {
+            console.warn('LibrarianAgent: No LLM provider available, using fallback query generation');
+            return this.getFallbackQueries(analysis);
+        }
+        try {
+            // Build rich context for LLM using shared RAG builder
+            const codebaseContext = RAGContextBuilder_1.RAGContextBuilder.buildLibraryContext(analysis, codeChunks);
+            const prompt = `You are an expert software architect and library curator. Analyze this codebase and generate intelligent library search queries that would add unique value and competitive advantages.
+
+CODEBASE ANALYSIS:
+${JSON.stringify(analysis, null, 2)}
+
+CODE CONTEXT:
+${codebaseContext}
+
+TASK: Generate 5-7 specific, actionable library search queries that would:
+1. Fill important functionality gaps in this codebase
+2. Create competitive advantages and unique features
+3. Improve performance, security, or user experience
+4. Leverage modern technologies and best practices
+5. Be practical and implementable with this technology stack
+
+For each query, consider:
+- What specific functionality is missing or could be enhanced?
+- What would create the biggest business impact?
+- What libraries would be findable with effective search terms?
+
+Return ONLY a JSON array in this exact format:
+[
+    {
+        "searchTerm": "specific searchable terms (2-4 words)",
+        "functionality": "brief functionality category",
+        "priority": "high|medium|low", 
+        "description": "why this would create unique value for this project"
+    }
+]
+
+Focus on practical, searchable terms that will find actual libraries, not overly specific phrases.`;
+            const response = await this.llmProvider.generateResponse([
+                { role: 'system', content: 'You are an expert software architect specializing in library recommendations. Return only valid JSON.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.3, maxTokens: 800 });
+            // Parse LLM response
+            const queries = this.parseIntelligentQueries(response.content || '');
+            console.log('LibrarianAgent: Generated', queries.length, 'intelligent queries via LLM');
+            return queries.length > 0 ? queries : this.getFallbackQueries(analysis);
+        }
+        catch (error) {
+            console.warn('LibrarianAgent: LLM query generation failed, using fallback:', error);
+            return this.getFallbackQueries(analysis);
+        }
+    }
+    parseIntelligentQueries(llmResponse) {
+        try {
+            // Try to extract JSON from response
+            const jsonMatch = llmResponse.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) {
+                throw new Error('No JSON array found in response');
+            }
+            const queries = JSON.parse(jsonMatch[0]);
+            // Validate structure
+            if (!Array.isArray(queries)) {
+                throw new Error('Response is not an array');
+            }
+            return queries.filter(q => q.searchTerm &&
+                q.functionality &&
+                q.priority &&
+                q.description &&
+                ['high', 'medium', 'low'].includes(q.priority));
+        }
+        catch (error) {
+            console.warn('Failed to parse LLM response:', error);
+            return [];
+        }
+    }
+    getFallbackQueries(analysis) {
+        const queries = [];
+        // Technology-specific fallback queries
+        if (analysis.key_technologies.some(tech => tech.toLowerCase().includes('react'))) {
+            queries.push({
+                searchTerm: 'react performance optimization',
+                functionality: 'Performance Enhancement',
+                priority: 'high',
+                description: 'Optimize React app performance for better user experience'
+            });
+            queries.push({
+                searchTerm: 'react state management',
+                functionality: 'State Management',
+                priority: 'medium',
+                description: 'Improve application state management architecture'
+            });
+        }
+        if (analysis.project_type === 'web-app') {
+            queries.push({
+                searchTerm: 'web accessibility library',
+                functionality: 'Accessibility',
+                priority: 'high',
+                description: 'Make the application accessible to all users'
+            });
+            queries.push({
+                searchTerm: 'progressive web app',
+                functionality: 'Modern Web Features',
+                priority: 'medium',
+                description: 'Add native app-like capabilities'
+            });
+        }
+        // Generic quality improvements
+        queries.push({
+            searchTerm: 'javascript testing framework',
+            functionality: 'Code Quality',
+            priority: 'medium',
+            description: 'Improve code reliability through comprehensive testing'
+        });
+        return queries.slice(0, 5);
+    }
+    getFallbackLibraryResults(analysis, codeChunks) {
+        // Return basic fallback results
+        return {
+            recommendations: [],
+            summary: {
+                totalRecommendations: 0,
+                byCategory: {},
+                highRelevance: 0,
+                easyIntegration: 0
+            }
+        };
     }
     async analyzeFunctionalityGaps(analysis, codeChunks) {
         const functionality = {
@@ -135,7 +256,7 @@ class LibrarianAgent {
             switch (feature) {
                 case 'interactive-modals':
                     queries.push({
-                        searchTerm: 'headless modal dialog unstyled accessible component library',
+                        searchTerm: 'react modal dialog component',
                         functionality: 'Unique User Experience',
                         priority: 'high',
                         description: 'Create distinctive modal experiences that set your product apart'
@@ -143,7 +264,7 @@ class LibrarianAgent {
                     break;
                 case 'notification-system':
                     queries.push({
-                        searchTerm: 'innovative toast notification unique animation library',
+                        searchTerm: 'react toast notification',
                         functionality: 'Memorable User Feedback',
                         priority: 'high',
                         description: 'Implement unique notification patterns that users remember'
@@ -151,7 +272,7 @@ class LibrarianAgent {
                     break;
                 case 'drag-drop-interactions':
                     queries.push({
-                        searchTerm: 'beautiful drag drop animation gesture library',
+                        searchTerm: 'react drag drop library',
                         functionality: 'Engaging Interactions',
                         priority: 'medium',
                         description: 'Create delightful drag-drop experiences that wow users'
@@ -159,7 +280,7 @@ class LibrarianAgent {
                     break;
                 case 'search-functionality':
                     queries.push({
-                        searchTerm: 'intelligent search fuzzy autocomplete smart filtering',
+                        searchTerm: 'react search autocomplete',
                         functionality: 'Smart Discovery',
                         priority: 'high',
                         description: 'Add AI-powered search that understands user intent'
@@ -172,7 +293,7 @@ class LibrarianAgent {
             switch (gap) {
                 case 'lazy-loading':
                     queries.push({
-                        searchTerm: 'intersection observer lazy loading progressive image enhancement',
+                        searchTerm: 'react lazy loading intersection observer',
                         functionality: 'Performance Excellence',
                         priority: 'high',
                         description: 'Implement next-gen loading strategies for superior performance'
@@ -180,7 +301,7 @@ class LibrarianAgent {
                     break;
                 case 'virtualization':
                     queries.push({
-                        searchTerm: 'windowing virtualization large dataset rendering library',
+                        searchTerm: 'react virtual scroll list',
                         functionality: 'Scale Excellence',
                         priority: 'medium',
                         description: 'Handle massive datasets with enterprise-grade virtualization'
@@ -188,7 +309,7 @@ class LibrarianAgent {
                     break;
                 case 'image-optimization':
                     queries.push({
-                        searchTerm: 'next-gen image format webp avif optimization library',
+                        searchTerm: 'javascript image optimization webp',
                         functionality: 'Modern Performance',
                         priority: 'high',
                         description: 'Leverage latest image technologies for competitive advantage'
@@ -201,7 +322,7 @@ class LibrarianAgent {
             switch (gap) {
                 case 'progressive-web-app':
                     queries.push({
-                        searchTerm: 'offline-first PWA background sync push notifications',
+                        searchTerm: 'react PWA service worker',
                         functionality: 'App-like Experience',
                         priority: 'medium',
                         description: 'Transform into a native-quality web app'
@@ -209,7 +330,7 @@ class LibrarianAgent {
                     break;
                 case 'real-time-communication':
                     queries.push({
-                        searchTerm: 'real-time collaboration websocket peer-to-peer library',
+                        searchTerm: 'websocket real-time react',
                         functionality: 'Live Collaboration',
                         priority: 'medium',
                         description: 'Enable real-time collaboration features'
@@ -222,7 +343,7 @@ class LibrarianAgent {
             switch (gap) {
                 case 'user-analytics':
                     queries.push({
-                        searchTerm: 'privacy-first analytics user behavior heatmap library',
+                        searchTerm: 'react analytics tracking',
                         functionality: 'Intelligent Insights',
                         priority: 'high',
                         description: 'Gain deep user insights while respecting privacy'
@@ -230,7 +351,7 @@ class LibrarianAgent {
                     break;
                 case 'accessibility':
                     queries.push({
-                        searchTerm: 'inclusive design accessibility automation testing library',
+                        searchTerm: 'react accessibility a11y',
                         functionality: 'Universal Access',
                         priority: 'high',
                         description: 'Create inclusive experiences that reach everyone'
@@ -238,7 +359,7 @@ class LibrarianAgent {
                     break;
                 case 'internationalization':
                     queries.push({
-                        searchTerm: 'intelligent localization dynamic translation library',
+                        searchTerm: 'react i18n internationalization',
                         functionality: 'Global Reach',
                         priority: 'medium',
                         description: 'Expand globally with smart localization'
@@ -249,13 +370,13 @@ class LibrarianAgent {
         // Add unique competitive features based on project type
         if (analysis.project_type === 'web-app') {
             queries.push({
-                searchTerm: 'micro-interactions animation library delightful UX',
+                searchTerm: 'react animation library framer motion',
                 functionality: 'Premium Experience',
                 priority: 'high',
                 description: 'Add premium micro-interactions that create emotional connection'
             });
             queries.push({
-                searchTerm: 'machine learning recommendation personalization library',
+                searchTerm: 'javascript machine learning recommendation',
                 functionality: 'AI-Powered Features',
                 priority: 'medium',
                 description: 'Integrate AI to personalize user experiences'

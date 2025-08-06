@@ -1,463 +1,559 @@
-import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import ignore from 'ignore';
-import * as parser from '@babel/parser';
-import traverse, { NodePath } from '@babel/traverse';
-import * as t from '@babel/types';
+import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
+import ignore from "ignore";
+import * as parser from "@babel/parser";
+import traverse, { NodePath } from "@babel/traverse";
+import * as t from "@babel/types";
 
 export interface CodeChunk {
-    id: string;
-    content: string;
-    filePath: string;
-    startLine: number;
-    endLine: number;
-    type: 'function' | 'class' | 'interface' | 'type' | 'variable' | 'import' | 'comment' | 'other';
-    language: string;
-    metadata: {
-        name?: string;
-        params?: string[];
-        returnType?: string;
-        complexity?: number;
-    };
+  id: string;
+  content: string;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  type:
+    | "function"
+    | "class"
+    | "interface"
+    | "type"
+    | "variable"
+    | "import"
+    | "comment"
+    | "other";
+  language: string;
+  metadata: {
+    name?: string;
+    params?: string[];
+    returnType?: string;
+    complexity?: number;
+  };
 }
 
 export class CodeIngestion {
-    private static readonly MAX_FILES = 300; // Increased to analyze more files
-    private static readonly MAX_FILE_SIZE = 500 * 1024; // 500KB max file size (5x increase)
-    private static readonly MAX_CHUNKS_PER_FILE = 50; // More chunks per file for better analysis
-    
-    private static readonly DEFAULT_IGNORE_PATTERNS = [
-        // Dependencies and package managers
-        'node_modules/**',
-        'bower_components/**',
-        'jspm_packages/**',
-        'vendor/**',
-        'third_party/**',
-        'packages/**',
-        '.pnp/**',
-        '.yarn/**',
-        
-        // Build outputs
-        'dist/**',
-        'build/**',
-        'out/**',
-        'target/**',
-        'bin/**',
-        'obj/**',
-        'public/**',
-        'static/**',
-        'assets/**',
-        
-        // Python
-        '__pycache__/**',
-        '*.pyc',
-        '*.pyo',
-        '*.pyd',
-        '.Python',
-        '*.so',
-        '.pytest_cache/**',
-        '.coverage/**',
-        'htmlcov/**',
-        '.tox/**',
-        '.env/**',
-        '.venv/**',
-        'venv/**',
-        'env/**',
-        'ENV/**',
-        
-        // Version control
-        '.git/**',
-        '.svn/**',
-        '.hg/**',
-        '.bzr/**',
-        
-        // IDEs and editors  
-        '.vscode/**',
-        '.idea/**',
-        '*.swp',
-        '*.swo',
-        '*~',
-        '.DS_Store',
-        'Thumbs.db',
-        
-        // Logs and temp files
-        '*.log',
-        '*.tmp',
-        '*.temp',
-        '*.bak',
-        '*.backup',
-        '*.cache',
-        
-        // Test coverage
-        'coverage/**',
-        '.nyc_output/**',
-        
-        // Minified files
-        '*.min.js',
-        '*.min.css',
-        '*.bundle.js',
-        '*.chunk.js',
-        
-        // Binary files
-        '*.exe',
-        '*.dll',
-        '*.dylib',
-        '*.zip',
-        '*.tar',
-        '*.gz',
-        '*.rar',
-        '*.7z',
-        
-        // Images and media (usually not relevant for code analysis)
-        '*.jpg',
-        '*.jpeg',
-        '*.png',
-        '*.gif',
-        '*.bmp',
-        '*.ico',
-        '*.svg',
-        '*.mp4',
-        '*.mp3',
-        '*.wav',
-        '*.mov',
-        
-        // Documentation builds
-        'docs/_build/**',
-        'site/**',
-        '_site/**',
-        
-        // Lock files and configs that are usually auto-generated
-        'package-lock.json',
-        'yarn.lock',
-        'composer.lock',
-        'Pipfile.lock'
-    ];
+  private static readonly MAX_FILES = 500; // Increased to analyze more files
+  private static readonly MAX_FILE_SIZE = 500 * 1024; // 500KB max file size (5x increase)
+  private static readonly MAX_CHUNKS_PER_FILE = 50; // More chunks per file for better analysis
 
-    private static readonly SUPPORTED_EXTENSIONS = new Set([
-        '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.hpp',
-        '.cs', '.php', '.rb', '.go', '.rs', '.swift', '.kt', '.scala', '.r',
-        '.sql', '.html', '.css', '.scss', '.sass', '.less', '.vue', '.svelte'
-    ]);
+  private static readonly DEFAULT_IGNORE_PATTERNS = [
+    // Dependencies and package managers
+    "node_modules/**",
+    "bower_components/**",
+    "jspm_packages/**",
+    "vendor/**",
+    "third_party/**",
+    "packages/**",
+    ".pnp/**",
+    ".yarn/**",
 
-    private workspaceRoot: string;
-    private ignoreFilter: any;
+    // Build outputs
+    "dist/**",
+    "build/**",
+    "out/**",
+    "target/**",
+    "bin/**",
+    "obj/**",
+    "public/**",
+    "static/**",
+    "assets/**",
 
-    constructor(workspaceRoot: string) {
-        this.workspaceRoot = workspaceRoot;
-        this.initializeIgnoreFilter();
+    // Python
+    "__pycache__/**",
+    "*.pyc",
+    "*.pyo",
+    "*.pyd",
+    ".Python",
+    "*.so",
+    ".pytest_cache/**",
+    ".coverage/**",
+    "htmlcov/**",
+    ".tox/**",
+    ".env/**",
+    ".venv/**",
+    "venv/**",
+    "env/**",
+    "ENV/**",
+
+    // Version control
+    ".git/**",
+    ".svn/**",
+    ".hg/**",
+    ".bzr/**",
+
+    // IDEs and editors
+    ".vscode/**",
+    ".idea/**",
+    "*.swp",
+    "*.swo",
+    "*~",
+    ".DS_Store",
+    "Thumbs.db",
+
+    // Logs and temp files
+    "*.log",
+    "*.tmp",
+    "*.temp",
+    "*.bak",
+    "*.backup",
+    "*.cache",
+
+    // Test coverage
+    "coverage/**",
+    ".nyc_output/**",
+
+    // Minified files
+    "*.min.js",
+    "*.min.css",
+    "*.bundle.js",
+    "*.chunk.js",
+
+    // Binary files
+    "*.exe",
+    "*.dll",
+    "*.dylib",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "*.rar",
+    "*.7z",
+
+    // Images and media (usually not relevant for code analysis)
+    "*.jpg",
+    "*.jpeg",
+    "*.png",
+    "*.gif",
+    "*.bmp",
+    "*.ico",
+    "*.svg",
+    "*.mp4",
+    "*.mp3",
+    "*.wav",
+    "*.mov",
+
+    // Documentation builds
+    "docs/_build/**",
+    "site/**",
+    "_site/**",
+
+    // Lock files and configs that are usually auto-generated
+    "package-lock.json",
+    "yarn.lock",
+    "composer.lock",
+    "Pipfile.lock",
+  ];
+
+  private static readonly SUPPORTED_EXTENSIONS = new Set([
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".py",
+    ".java",
+    ".cpp",
+    ".c",
+    ".h",
+    ".hpp",
+    ".cs",
+    ".php",
+    ".rb",
+    ".go",
+    ".rs",
+    ".swift",
+    ".kt",
+    ".scala",
+    ".r",
+    ".sql",
+    ".html",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".vue",
+    ".svelte",
+  ]);
+
+  private workspaceRoot: string;
+  private ignoreFilter: any;
+
+  constructor(workspaceRoot: string) {
+    this.workspaceRoot = workspaceRoot;
+    this.initializeIgnoreFilter();
+  }
+
+  private initializeIgnoreFilter(): void {
+    this.ignoreFilter = ignore().add(CodeIngestion.DEFAULT_IGNORE_PATTERNS);
+
+    // Add patterns from .gitignore if it exists
+    const gitignorePath = path.join(this.workspaceRoot, ".gitignore");
+    if (fs.existsSync(gitignorePath)) {
+      const gitignoreContent = fs.readFileSync(gitignorePath, "utf8");
+      this.ignoreFilter.add(gitignoreContent);
     }
 
-    private initializeIgnoreFilter(): void {
-        this.ignoreFilter = ignore().add(CodeIngestion.DEFAULT_IGNORE_PATTERNS);
+    // Add patterns from .vscodeignore if it exists
+    const vscodeignorePath = path.join(this.workspaceRoot, ".vscodeignore");
+    if (fs.existsSync(vscodeignorePath)) {
+      const vscodeignoreContent = fs.readFileSync(vscodeignorePath, "utf8");
+      this.ignoreFilter.add(vscodeignoreContent);
+    }
+  }
 
-        // Add patterns from .gitignore if it exists
-        const gitignorePath = path.join(this.workspaceRoot, '.gitignore');
-        if (fs.existsSync(gitignorePath)) {
-            const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');
-            this.ignoreFilter.add(gitignoreContent);
+  async ingestWorkspace(): Promise<CodeChunk[]> {
+    const allFiles = await this.getAllSourceFiles();
+    const chunks: CodeChunk[] = [];
+
+    console.log(
+      `Found ${allFiles.length} files, processing up to ${CodeIngestion.MAX_FILES} files...`
+    );
+
+    // Limit the number of files to process
+    const filesToProcess = allFiles.slice(0, CodeIngestion.MAX_FILES);
+
+    for (const filePath of filesToProcess) {
+      try {
+        // Check file size before processing
+        const stats = fs.statSync(filePath);
+        if (stats.size > CodeIngestion.MAX_FILE_SIZE) {
+          console.warn(
+            `Skipping large file: ${filePath} (${Math.round(
+              stats.size / 1024
+            )}KB)`
+          );
+          continue;
         }
 
-        // Add patterns from .vscodeignore if it exists
-        const vscodeignorePath = path.join(this.workspaceRoot, '.vscodeignore');
-        if (fs.existsSync(vscodeignorePath)) {
-            const vscodeignoreContent = fs.readFileSync(vscodeignorePath, 'utf8');
-            this.ignoreFilter.add(vscodeignoreContent);
-        }
+        const fileChunks = await this.processFile(filePath);
+        chunks.push(...fileChunks.slice(0, CodeIngestion.MAX_CHUNKS_PER_FILE));
+      } catch (error) {
+        console.warn(`Failed to process file ${filePath}:`, error);
+      }
     }
 
-    async ingestWorkspace(): Promise<CodeChunk[]> {
-        const allFiles = await this.getAllSourceFiles();
-        const chunks: CodeChunk[] = [];
-        
-        console.log(`Found ${allFiles.length} files, processing up to ${CodeIngestion.MAX_FILES} files...`);
-        
-        // Limit the number of files to process
-        const filesToProcess = allFiles.slice(0, CodeIngestion.MAX_FILES);
+    console.log(
+      `Successfully processed ${filesToProcess.length} files, generated ${chunks.length} chunks`
+    );
+    return chunks;
+  }
 
-        for (const filePath of filesToProcess) {
-            try {
-                // Check file size before processing
-                const stats = fs.statSync(filePath);
-                if (stats.size > CodeIngestion.MAX_FILE_SIZE) {
-                    console.warn(`Skipping large file: ${filePath} (${Math.round(stats.size / 1024)}KB)`);
-                    continue;
-                }
-                
-                const fileChunks = await this.processFile(filePath);
-                chunks.push(...fileChunks.slice(0, CodeIngestion.MAX_CHUNKS_PER_FILE));
-            } catch (error) {
-                console.warn(`Failed to process file ${filePath}:`, error);
-            }
+  private async getAllSourceFiles(): Promise<string[]> {
+    const files: string[] = [];
+
+    const walkDir = (dir: string): void => {
+      // Early exit if we've found enough files
+      if (files.length >= CodeIngestion.MAX_FILES * 2) {
+        return;
+      }
+
+      const items = fs.readdirSync(dir);
+
+      for (const item of items) {
+        const fullPath = path.join(dir, item);
+        const relativePath = path.relative(this.workspaceRoot, fullPath);
+
+        if (this.ignoreFilter.ignores(relativePath)) {
+          continue;
         }
 
-        console.log(`Successfully processed ${filesToProcess.length} files, generated ${chunks.length} chunks`);
-        return chunks;
-    }
+        const stat = fs.statSync(fullPath);
 
-    private async getAllSourceFiles(): Promise<string[]> {
-        const files: string[] = [];
-        
-        const walkDir = (dir: string): void => {
+        if (stat.isDirectory()) {
+          walkDir(fullPath);
+        } else if (stat.isFile()) {
+          const ext = path.extname(fullPath).toLowerCase();
+          if (CodeIngestion.SUPPORTED_EXTENSIONS.has(ext)) {
+            files.push(fullPath);
+
             // Early exit if we've found enough files
             if (files.length >= CodeIngestion.MAX_FILES * 2) {
-                return;
+              return;
             }
-            
-            const items = fs.readdirSync(dir);
-            
-            for (const item of items) {
-                const fullPath = path.join(dir, item);
-                const relativePath = path.relative(this.workspaceRoot, fullPath);
-                
-                if (this.ignoreFilter.ignores(relativePath)) {
-                    continue;
-                }
-                
-                const stat = fs.statSync(fullPath);
-                
-                if (stat.isDirectory()) {
-                    walkDir(fullPath);
-                } else if (stat.isFile()) {
-                    const ext = path.extname(fullPath).toLowerCase();
-                    if (CodeIngestion.SUPPORTED_EXTENSIONS.has(ext)) {
-                        files.push(fullPath);
-                        
-                        // Early exit if we've found enough files
-                        if (files.length >= CodeIngestion.MAX_FILES * 2) {
-                            return;
-                        }
-                    }
-                }
-            }
-        };
+          }
+        }
+      }
+    };
 
-        walkDir(this.workspaceRoot);
-        return files;
+    walkDir(this.workspaceRoot);
+    return files;
+  }
+
+  private async processFile(filePath: string): Promise<CodeChunk[]> {
+    const content = fs.readFileSync(filePath, "utf8");
+    const language = this.getLanguageFromExtension(path.extname(filePath));
+
+    // Use AST-aware chunking for supported languages
+    if (language === "javascript" || language === "typescript") {
+      return this.processJavaScriptTypeScript(filePath, content, language);
+    } else if (language === "python") {
+      return this.processPython(filePath, content);
+    } else {
+      // Fallback to simple chunking for unsupported languages
+      return this.processGeneric(filePath, content, language);
     }
+  }
 
-    private async processFile(filePath: string): Promise<CodeChunk[]> {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const language = this.getLanguageFromExtension(path.extname(filePath));
-        
-        // Use AST-aware chunking for supported languages
-        if (language === 'javascript' || language === 'typescript') {
-            return this.processJavaScriptTypeScript(filePath, content, language);
-        } else if (language === 'python') {
-            return this.processPython(filePath, content);
-        } else {
-            // Fallback to simple chunking for unsupported languages
-            return this.processGeneric(filePath, content, language);
-        }
-    }
+  private processJavaScriptTypeScript(
+    filePath: string,
+    content: string,
+    language: string
+  ): CodeChunk[] {
+    const chunks: CodeChunk[] = [];
 
-    private processJavaScriptTypeScript(filePath: string, content: string, language: string): CodeChunk[] {
-        const chunks: CodeChunk[] = [];
-        
-        try {
-            const ast = parser.parse(content, {
-                sourceType: 'module',
-                plugins: [
-                    'jsx',
-                    'typescript',
-                    'decorators-legacy',
-                    'classProperties',
-                    'objectRestSpread',
-                    'asyncGenerators',
-                    'functionBind',
-                    'exportDefaultFrom',
-                    'exportNamespaceFrom',
-                    'dynamicImport',
-                    'nullishCoalescingOperator',
-                    'optionalChaining'
-                ]
-            });
+    try {
+      const ast = parser.parse(content, {
+        sourceType: "module",
+        plugins: [
+          "jsx",
+          "typescript",
+          "decorators-legacy",
+          "classProperties",
+          "objectRestSpread",
+          "asyncGenerators",
+          "functionBind",
+          "exportDefaultFrom",
+          "exportNamespaceFrom",
+          "dynamicImport",
+          "nullishCoalescingOperator",
+          "optionalChaining",
+        ],
+      });
 
-            const lines = content.split('\n');
+      const lines = content.split("\n");
 
-            traverse(ast, {
-                FunctionDeclaration: (nodePath: NodePath<t.FunctionDeclaration>) => {
-                    const node = nodePath.node;
-                    const chunk = this.createChunkFromNode(node, filePath, lines, language, 'function');
-                    if (chunk) chunks.push(chunk);
-                },
-                ArrowFunctionExpression: (nodePath: NodePath<t.ArrowFunctionExpression>) => {
-                    const node = nodePath.node;
-                    if (t.isVariableDeclarator(nodePath.parent) && t.isIdentifier(nodePath.parent.id)) {
-                        const chunk = this.createChunkFromNode(node, filePath, lines, language, 'function');
-                        if (chunk) {
-                            chunk.metadata.name = nodePath.parent.id.name;
-                            chunks.push(chunk);
-                        }
-                    }
-                },
-                ClassDeclaration: (nodePath: NodePath<t.ClassDeclaration>) => {
-                    const node = nodePath.node;
-                    const chunk = this.createChunkFromNode(node, filePath, lines, language, 'class');
-                    if (chunk) chunks.push(chunk);
-                },
-                TSInterfaceDeclaration: (nodePath: NodePath<t.TSInterfaceDeclaration>) => {
-                    const node = nodePath.node;
-                    const chunk = this.createChunkFromNode(node, filePath, lines, language, 'interface');
-                    if (chunk) chunks.push(chunk);
-                },
-                TSTypeAliasDeclaration: (nodePath: NodePath<t.TSTypeAliasDeclaration>) => {
-                    const node = nodePath.node;
-                    const chunk = this.createChunkFromNode(node, filePath, lines, language, 'type');
-                    if (chunk) chunks.push(chunk);
-                }
-            });
-
-        } catch (error) {
-            console.warn(`Failed to parse ${filePath} as ${language}:`, error);
-            return this.processGeneric(filePath, content, language);
-        }
-
-        return chunks;
-    }
-
-    private processPython(filePath: string, content: string): CodeChunk[] {
-        // For Python, we'll use a simple regex-based approach
-        // In a production environment, you'd want to use a proper Python AST parser
-        const chunks: CodeChunk[] = [];
-        const lines = content.split('\n');
-        
-        const functionRegex = /^(\s*)def\s+(\w+)\s*\([^)]*\):/;
-        const classRegex = /^(\s*)class\s+(\w+).*:/;
-        
-        let currentChunk: Partial<CodeChunk> | null = null;
-        let currentIndent = 0;
-        
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const functionMatch = line.match(functionRegex);
-            const classMatch = line.match(classRegex);
-            
-            if (functionMatch || classMatch) {
-                // Save previous chunk if exists
-                if (currentChunk) {
-                    currentChunk.endLine = i - 1;
-                    currentChunk.content = lines.slice(currentChunk.startLine!, currentChunk.endLine + 1).join('\n');
-                    chunks.push(currentChunk as CodeChunk);
-                }
-                
-                // Start new chunk
-                const match = functionMatch || classMatch;
-                const indent = match![1].length;
-                const name = match![2];
-                const type = functionMatch ? 'function' : 'class';
-                
-                currentChunk = {
-                    id: `${filePath}:${i + 1}:${name}`,
-                    filePath,
-                    startLine: i,
-                    type,
-                    language: 'python',
-                    metadata: { name }
-                };
-                currentIndent = indent;
-            }
-        }
-        
-        // Close final chunk
-        if (currentChunk) {
-            currentChunk.endLine = lines.length - 1;
-            currentChunk.content = lines.slice(currentChunk.startLine!, currentChunk.endLine + 1).join('\n');
-            chunks.push(currentChunk as CodeChunk);
-        }
-        
-        return chunks;
-    }
-
-    private processGeneric(filePath: string, content: string, language: string): CodeChunk[] {
-        // Simple line-based chunking for unsupported languages
-        const chunks: CodeChunk[] = [];
-        const lines = content.split('\n');
-        const chunkSize = 50; // Lines per chunk
-        
-        for (let i = 0; i < lines.length; i += chunkSize) {
-            const endLine = Math.min(i + chunkSize - 1, lines.length - 1);
-            const chunkContent = lines.slice(i, endLine + 1).join('\n');
-            
-            chunks.push({
-                id: `${filePath}:${i + 1}-${endLine + 1}`,
-                content: chunkContent,
-                filePath,
-                startLine: i,
-                endLine,
-                type: 'other',
-                language,
-                metadata: {}
-            });
-        }
-        
-        return chunks;
-    }
-
-    private createChunkFromNode(node: any, filePath: string, lines: string[], language: string, type: CodeChunk['type']): CodeChunk | null {
-        if (!node.loc) return null;
-        
-        const startLine = node.loc.start.line - 1;
-        const endLine = node.loc.end.line - 1;
-        const content = lines.slice(startLine, endLine + 1).join('\n');
-        
-        const metadata: CodeChunk['metadata'] = {};
-        
-        if (t.isFunctionDeclaration(node) || t.isArrowFunctionExpression(node)) {
-            if (t.isFunctionDeclaration(node) && node.id) {
-                metadata.name = node.id.name;
-            }
-            metadata.params = node.params.map((param: any) => {
-                if (t.isIdentifier(param)) return param.name;
-                return 'unknown';
-            });
-        } else if (t.isClassDeclaration(node) && node.id) {
-            metadata.name = node.id.name;
-        }
-        
-        return {
-            id: `${filePath}:${startLine + 1}:${metadata.name || 'anonymous'}`,
-            content,
+      traverse(ast, {
+        FunctionDeclaration: (nodePath: NodePath<t.FunctionDeclaration>) => {
+          const node = nodePath.node;
+          const chunk = this.createChunkFromNode(
+            node,
             filePath,
-            startLine,
-            endLine,
-            type,
+            lines,
             language,
-            metadata
-        };
+            "function"
+          );
+          if (chunk) chunks.push(chunk);
+        },
+        ArrowFunctionExpression: (
+          nodePath: NodePath<t.ArrowFunctionExpression>
+        ) => {
+          const node = nodePath.node;
+          if (
+            t.isVariableDeclarator(nodePath.parent) &&
+            t.isIdentifier(nodePath.parent.id)
+          ) {
+            const chunk = this.createChunkFromNode(
+              node,
+              filePath,
+              lines,
+              language,
+              "function"
+            );
+            if (chunk) {
+              chunk.metadata.name = nodePath.parent.id.name;
+              chunks.push(chunk);
+            }
+          }
+        },
+        ClassDeclaration: (nodePath: NodePath<t.ClassDeclaration>) => {
+          const node = nodePath.node;
+          const chunk = this.createChunkFromNode(
+            node,
+            filePath,
+            lines,
+            language,
+            "class"
+          );
+          if (chunk) chunks.push(chunk);
+        },
+        TSInterfaceDeclaration: (
+          nodePath: NodePath<t.TSInterfaceDeclaration>
+        ) => {
+          const node = nodePath.node;
+          const chunk = this.createChunkFromNode(
+            node,
+            filePath,
+            lines,
+            language,
+            "interface"
+          );
+          if (chunk) chunks.push(chunk);
+        },
+        TSTypeAliasDeclaration: (
+          nodePath: NodePath<t.TSTypeAliasDeclaration>
+        ) => {
+          const node = nodePath.node;
+          const chunk = this.createChunkFromNode(
+            node,
+            filePath,
+            lines,
+            language,
+            "type"
+          );
+          if (chunk) chunks.push(chunk);
+        },
+      });
+    } catch (error) {
+      console.warn(`Failed to parse ${filePath} as ${language}:`, error);
+      return this.processGeneric(filePath, content, language);
     }
 
-    private getLanguageFromExtension(ext: string): string {
-        const languageMap: { [key: string]: string } = {
-            '.js': 'javascript',
-            '.jsx': 'javascript',
-            '.ts': 'typescript',
-            '.tsx': 'typescript',
-            '.py': 'python',
-            '.java': 'java',
-            '.cpp': 'cpp',
-            '.c': 'c',
-            '.h': 'c',
-            '.hpp': 'cpp',
-            '.cs': 'csharp',
-            '.php': 'php',
-            '.rb': 'ruby',
-            '.go': 'go',
-            '.rs': 'rust',
-            '.swift': 'swift',
-            '.kt': 'kotlin',
-            '.scala': 'scala',
-            '.r': 'r',
-            '.sql': 'sql',
-            '.html': 'html',
-            '.css': 'css',
-            '.scss': 'scss',
-            '.sass': 'sass',
-            '.less': 'less',
-            '.vue': 'vue',
-            '.svelte': 'svelte'
+    return chunks;
+  }
+
+  private processPython(filePath: string, content: string): CodeChunk[] {
+    // For Python, we'll use a simple regex-based approach
+    // In a production environment, you'd want to use a proper Python AST parser
+    const chunks: CodeChunk[] = [];
+    const lines = content.split("\n");
+
+    const functionRegex = /^(\s*)def\s+(\w+)\s*\([^)]*\):/;
+    const classRegex = /^(\s*)class\s+(\w+).*:/;
+
+    let currentChunk: Partial<CodeChunk> | null = null;
+    let currentIndent = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const functionMatch = line.match(functionRegex);
+      const classMatch = line.match(classRegex);
+
+      if (functionMatch || classMatch) {
+        // Save previous chunk if exists
+        if (currentChunk) {
+          currentChunk.endLine = i - 1;
+          currentChunk.content = lines
+            .slice(currentChunk.startLine!, currentChunk.endLine + 1)
+            .join("\n");
+          chunks.push(currentChunk as CodeChunk);
+        }
+
+        // Start new chunk
+        const match = functionMatch || classMatch;
+        const indent = match![1].length;
+        const name = match![2];
+        const type = functionMatch ? "function" : "class";
+
+        currentChunk = {
+          id: `${filePath}:${i + 1}:${name}`,
+          filePath,
+          startLine: i,
+          type,
+          language: "python",
+          metadata: { name },
         };
-        
-        return languageMap[ext.toLowerCase()] || 'text';
+        currentIndent = indent;
+      }
     }
+
+    // Close final chunk
+    if (currentChunk) {
+      currentChunk.endLine = lines.length - 1;
+      currentChunk.content = lines
+        .slice(currentChunk.startLine!, currentChunk.endLine + 1)
+        .join("\n");
+      chunks.push(currentChunk as CodeChunk);
+    }
+
+    return chunks;
+  }
+
+  private processGeneric(
+    filePath: string,
+    content: string,
+    language: string
+  ): CodeChunk[] {
+    // Simple line-based chunking for unsupported languages
+    const chunks: CodeChunk[] = [];
+    const lines = content.split("\n");
+    const chunkSize = 50; // Lines per chunk
+
+    for (let i = 0; i < lines.length; i += chunkSize) {
+      const endLine = Math.min(i + chunkSize - 1, lines.length - 1);
+      const chunkContent = lines.slice(i, endLine + 1).join("\n");
+
+      chunks.push({
+        id: `${filePath}:${i + 1}-${endLine + 1}`,
+        content: chunkContent,
+        filePath,
+        startLine: i,
+        endLine,
+        type: "other",
+        language,
+        metadata: {},
+      });
+    }
+
+    return chunks;
+  }
+
+  private createChunkFromNode(
+    node: any,
+    filePath: string,
+    lines: string[],
+    language: string,
+    type: CodeChunk["type"]
+  ): CodeChunk | null {
+    if (!node.loc) return null;
+
+    const startLine = node.loc.start.line - 1;
+    const endLine = node.loc.end.line - 1;
+    const content = lines.slice(startLine, endLine + 1).join("\n");
+
+    const metadata: CodeChunk["metadata"] = {};
+
+    if (t.isFunctionDeclaration(node) || t.isArrowFunctionExpression(node)) {
+      if (t.isFunctionDeclaration(node) && node.id) {
+        metadata.name = node.id.name;
+      }
+      metadata.params = node.params.map((param: any) => {
+        if (t.isIdentifier(param)) return param.name;
+        return "unknown";
+      });
+    } else if (t.isClassDeclaration(node) && node.id) {
+      metadata.name = node.id.name;
+    }
+
+    return {
+      id: `${filePath}:${startLine + 1}:${metadata.name || "anonymous"}`,
+      content,
+      filePath,
+      startLine,
+      endLine,
+      type,
+      language,
+      metadata,
+    };
+  }
+
+  private getLanguageFromExtension(ext: string): string {
+    const languageMap: { [key: string]: string } = {
+      ".js": "javascript",
+      ".jsx": "javascript",
+      ".ts": "typescript",
+      ".tsx": "typescript",
+      ".py": "python",
+      ".java": "java",
+      ".cpp": "cpp",
+      ".c": "c",
+      ".h": "c",
+      ".hpp": "cpp",
+      ".cs": "csharp",
+      ".php": "php",
+      ".rb": "ruby",
+      ".go": "go",
+      ".rs": "rust",
+      ".swift": "swift",
+      ".kt": "kotlin",
+      ".scala": "scala",
+      ".r": "r",
+      ".sql": "sql",
+      ".html": "html",
+      ".css": "css",
+      ".scss": "scss",
+      ".sass": "sass",
+      ".less": "less",
+      ".vue": "vue",
+      ".svelte": "svelte",
+    };
+
+    return languageMap[ext.toLowerCase()] || "text";
+  }
 }

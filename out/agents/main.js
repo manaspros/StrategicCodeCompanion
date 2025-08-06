@@ -12,8 +12,8 @@ class MultiAgentOrchestrator {
         this.llmProvider = llmProvider;
         this.refactorAgent = new RefactorAgent_1.RefactorAgent(llmProvider);
         this.architectAgent = new ArchitectAgent_1.ArchitectAgent(llmProvider);
-        this.librarianAgent = new LibrarianAgent_1.LibrarianAgent();
-        this.tutorAgent = new TutorAgent_1.TutorAgent();
+        this.librarianAgent = new LibrarianAgent_1.LibrarianAgent(llmProvider);
+        this.tutorAgent = new TutorAgent_1.TutorAgent(llmProvider);
         this.enhancedOrchestrator = new OpenAIAgentOrchestrator_1.OpenAIAgentOrchestrator(llmProvider);
         // Initialize enhanced orchestrator with Composio API key
         if (composioApiKey) {
