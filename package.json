@@ -70,14 +70,17 @@
     "@babel/parser": "^7.24.8",
     "@babel/traverse": "^7.24.8",
     "@babel/types": "^7.24.8",
+    "@composio/core": "^0.1.36-next.13",
     "@google/generative-ai": "^0.17.1",
     "@langchain/anthropic": "^0.3.0",
     "@langchain/core": "^0.3.0",
     "@langchain/google-genai": "^0.1.0",
     "@langchain/openai": "^0.3.0",
+    "@openai/agents": "^0.0.15",
     "axios": "^1.7.2",
     "ignore": "^5.3.1",
     "langchain": "^0.3.0",
-    "openai": "^4.52.7"
+    "openai": "^4.52.7",
+    "zod": "^3.25.67"
   }
 }

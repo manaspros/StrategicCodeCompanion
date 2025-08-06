@@ -29,6 +29,8 @@ const llmProvider_1 = require("../llm/llmProvider");
 const ingestion_1 = require("../rag/ingestion");
 const embedding_1 = require("../rag/embedding");
 const main_1 = require("../agents/main");
+const CodeFixService_1 = require("../services/CodeFixService");
+const FileEditService_1 = require("../services/FileEditService");
 class SidebarProvider {
     constructor(_extensionUri, keyManager) {
         this._extensionUri = _extensionUri;
@@ -63,33 +65,23 @@ class SidebarProvider {
                     console.log('Strategic Code Companion: Processing saveApiKey message');
                     console.log('Strategic Code Companion: Provider:', data.provider);
                     console.log('Strategic Code Companion: API key received:', data.apiKey ? 'Yes' : 'No');
-                    await this.saveApiKey(data.provider, data.apiKey);
+                    console.log('Strategic Code Companion: Composio key received:', data.composioKey ? 'Yes' : 'No');
+                    await this.saveApiKey(data.provider, data.apiKey, data.composioKey);
                     break;
                 case 'openUrl':
                     vscode.env.openExternal(vscode.Uri.parse(data.url));
                     break;
-                case 'testResults':
-                    // Test results view with dummy data
-                    this.showResults({
-                        analysis: {
-                            overall_summary: "Test analysis of your codebase",
-                            key_technologies: ["JavaScript", "TypeScript"],
-                            architectural_patterns: ["MVC", "Observer"],
-                            main_dependencies: ["React", "Node.js"],
-                            potential_areas_for_refactoring: ["Improve error handling"],
-                            project_type: "web-app",
-                            complexity_score: 7,
-                            code_quality_metrics: {
-                                maintainability: 8,
-                                readability: 7,
-                                testability: 6
-                            }
-                        },
-                        refactoring: { suggestions: [], summary: { totalSuggestions: 0, highPriority: 0, mediumPriority: 0, lowPriority: 0, categories: [] } },
-                        architecture: { features: [], summary: { totalFeatures: 0, byCategory: {}, byComplexity: {}, recommendedNext: [] } },
-                        libraries: { recommendations: [], summary: { totalRecommendations: 0, byCategory: {}, highRelevance: 0, easyIntegration: 0 } },
-                        tutorials: { tutorials: [], summary: { totalTutorials: 0, byDifficulty: {}, byPlatform: {}, averageRelevance: 0 } }
-                    });
+                case 'fixRefactoring':
+                    await this.handleFixRefactoring(data.suggestionId, data.suggestion);
+                    break;
+                case 'implementFeature':
+                    await this.handleImplementFeature(data.featureId, data.feature);
+                    break;
+                case 'implementRecommendation':
+                    await this.handleImplementRecommendation(data.recommendationId, data.recommendation);
+                    break;
+                case 'installLibrary':
+                    await this.handleInstallLibrary(data.libraryName);
                     break;
             }
         });
@@ -173,9 +165,15 @@ class SidebarProvider {
             this.updateLoadingMessage('Running AI analysis...');
             console.log('Strategic Code Companion: Starting multi-agent analysis...');
             try {
-                const orchestrator = new main_1.MultiAgentOrchestrator(llmProvider);
+                // Get Composio API key if available for enhanced analysis
+                const composioKey = await this.keyManager.getComposioKey();
+                const orchestrator = new main_1.MultiAgentOrchestrator(llmProvider, composioKey || undefined);
                 const results = await orchestrator.analyzeCodebase(chunks.slice(0, 100)); // Increased analysis chunk limit
                 console.log('Strategic Code Companion: Analysis completed successfully');
+                // Initialize AI editing services
+                this.codeFixService = new CodeFixService_1.CodeFixService(llmProvider, workspaceRoot);
+                this.fileEditService = new FileEditService_1.FileEditService(workspaceRoot);
+                await this.fileEditService.loadBackupsFromDisk();
                 // Step 4: Display results
                 this.showResults(results);
             }
@@ -202,13 +200,21 @@ class SidebarProvider {
     async clearApiKey() {
         try {
             await this.keyManager.clearAPIKey();
+            // Also clear Composio key if it exists
+            try {
+                await this.keyManager.clearComposioKey();
+            }
+            catch (composioError) {
+                console.warn('Failed to clear Composio key:', composioError);
+                // Don't fail the whole process if Composio key clearing fails
+            }
             this.showOnboardingView();
         }
         catch (error) {
             vscode.window.showErrorMessage(`Failed to clear API key: ${error}`);
         }
     }
-    async saveApiKey(provider, apiKey) {
+    async saveApiKey(provider, apiKey, composioKey) {
         try {
             console.log(`Strategic Code Companion: Saving API key for provider: ${provider}`);
             // Show a progress message to user
@@ -232,8 +238,19 @@ class SidebarProvider {
                     // If valid, store it
                     await this.keyManager.storeAPIKey({ provider: provider, apiKey });
                     console.log('Strategic Code Companion: API key saved successfully');
+                    // Save Composio key if provided
+                    if (composioKey) {
+                        try {
+                            await this.keyManager.storeComposioKey(composioKey);
+                            console.log('Strategic Code Companion: Composio API key saved successfully');
+                        }
+                        catch (composioError) {
+                            console.warn('Strategic Code Companion: Failed to save Composio key:', composioError);
+                            // Don't fail the whole process if Composio key fails
+                        }
+                    }
                     // Show success message and switch to main view
-                    vscode.window.showInformationMessage('API key saved successfully!');
+                    vscode.window.showInformationMessage('Configuration saved successfully!');
                     setTimeout(() => {
                         this.showMainView();
                     }, 500); // Small delay to ensure webview is ready
@@ -297,6 +314,197 @@ class SidebarProvider {
             console.error('Strategic Code Companion: _view is null, cannot show results');
         }
     }
+    async handleFixRefactoring(suggestionId, suggestion) {
+        if (!this.codeFixService || !this.fileEditService) {
+            vscode.window.showErrorMessage('AI editing services not initialized. Please run analysis first.');
+            return;
+        }
+        try {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Applying refactoring: ${suggestion.title}`,
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ message: 'Generating code fixes...' });
+                // Generate the code fixes
+                const fixes = await this.codeFixService.generateRefactoringFix(suggestion);
+                progress.report({ message: 'Previewing changes...' });
+                // Show diff preview and get user confirmation
+                const shouldApply = await this.fileEditService.previewChanges(fixes);
+                if (!shouldApply) {
+                    vscode.window.showInformationMessage('Refactoring cancelled by user.');
+                    return;
+                }
+                progress.report({ message: 'Applying changes...' });
+                // Apply the fixes
+                const result = await this.fileEditService.applyFixes(fixes, `Refactoring: ${suggestion.title}`);
+                if (result.success) {
+                    vscode.window.showInformationMessage(`Successfully applied refactoring: ${suggestion.title}`);
+                }
+                else {
+                    vscode.window.showWarningMessage(`Refactoring partially applied. ${result.failedFixes.length} changes failed.`);
+                }
+            });
+        }
+        catch (error) {
+            console.error('Failed to apply refactoring:', error);
+            vscode.window.showErrorMessage(`Failed to apply refactoring: ${error}`);
+        }
+    }
+    async handleImplementFeature(featureId, feature) {
+        if (!this.codeFixService || !this.fileEditService) {
+            vscode.window.showErrorMessage('AI editing services not initialized. Please run analysis first.');
+            return;
+        }
+        try {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Implementing feature: ${feature.title}`,
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ message: 'Generating feature implementation...' });
+                // Generate the feature implementation
+                const fixes = await this.codeFixService.generateFeatureImplementation(feature);
+                if (fixes.length === 0) {
+                    vscode.window.showWarningMessage('No code changes generated for this feature.');
+                    return;
+                }
+                progress.report({ message: 'Previewing changes...' });
+                // Show diff preview and get user confirmation
+                const shouldApply = await this.fileEditService.previewChanges(fixes);
+                if (!shouldApply) {
+                    vscode.window.showInformationMessage('Feature implementation cancelled by user.');
+                    return;
+                }
+                progress.report({ message: 'Implementing feature...' });
+                // Apply the fixes
+                const result = await this.fileEditService.applyFixes(fixes, `Implement feature: ${feature.title}`);
+                if (result.success) {
+                    vscode.window.showInformationMessage(`Successfully implemented feature: ${feature.title}. Created ${result.appliedFixes.length} files/changes.`);
+                }
+                else {
+                    vscode.window.showWarningMessage(`Feature partially implemented. ${result.failedFixes.length} changes failed.`);
+                }
+            });
+        }
+        catch (error) {
+            console.error('Failed to implement feature:', error);
+            vscode.window.showErrorMessage(`Failed to implement feature: ${error}`);
+        }
+    }
+    async handleImplementRecommendation(recommendationId, recommendation) {
+        if (!this.codeFixService || !this.fileEditService) {
+            vscode.window.showErrorMessage('AI editing services not initialized. Please run analysis first.');
+            return;
+        }
+        try {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Implementing ${recommendation.title}...`,
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ message: 'Analyzing implementation requirements...' });
+                // Generate implementation plan using the code fix service
+                const implementationPrompt = `
+                    Implement the following strategic recommendation:
+                    
+                    Title: ${recommendation.title}
+                    Description: ${recommendation.description}
+                    Category: ${recommendation.category}
+                    
+                    Business Justification:
+                    ${recommendation.justification.businessRationale}
+                    
+                    Implementation Plan:
+                    - Effort Level: ${recommendation.implementationPlan.effort}
+                    - Timeframe: ${recommendation.implementationPlan.timeframe}
+                    - Prerequisites: ${recommendation.implementationPlan.prerequisites.join(', ')}
+                    - Steps: ${recommendation.implementationPlan.steps.join(', ')}
+                    
+                    Generate comprehensive code changes to implement this recommendation.
+                    Focus on creating the foundation and core functionality that provides the described business value.
+                    
+                    Return detailed implementation instructions and code changes.
+                `;
+                progress.report({ message: 'Generating implementation code...' });
+                const fixes = await this.codeFixService.generateRefactoringFix({
+                    id: recommendationId,
+                    title: recommendation.title,
+                    description: implementationPrompt,
+                    priority: recommendation.priority,
+                    category: 'best-practices',
+                    beforeCode: '// Current implementation',
+                    afterCode: '// Enhanced implementation with ' + recommendation.title,
+                    estimatedEffort: recommendation.implementationPlan?.effort || 'medium',
+                    benefits: [recommendation.justification?.businessRationale || 'Enhanced functionality']
+                });
+                progress.report({ message: 'Applying changes...' });
+                const success = await this.fileEditService.previewChanges(fixes);
+                if (success) {
+                    vscode.window.showInformationMessage(`Successfully implemented recommendation: ${recommendation.title}. Applied ${fixes.length} changes.`);
+                }
+                else {
+                    vscode.window.showWarningMessage(`Recommendation implementation encountered issues. Please check the preview.`);
+                }
+            });
+        }
+        catch (error) {
+            console.error('Failed to implement recommendation:', error);
+            vscode.window.showErrorMessage(`Failed to implement recommendation: ${error}`);
+        }
+    }
+    async handleInstallLibrary(libraryName) {
+        if (!vscode.workspace.workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder is open!');
+            return;
+        }
+        try {
+            const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Installing ${libraryName}...`,
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ message: 'Running npm install...' });
+                const { spawn } = require('child_process');
+                const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+                return new Promise((resolve, reject) => {
+                    const npmProcess = spawn(command, ['install', libraryName], {
+                        cwd: workspaceRoot,
+                        stdio: 'pipe'
+                    });
+                    let output = '';
+                    let errorOutput = '';
+                    npmProcess.stdout.on('data', (data) => {
+                        output += data.toString();
+                    });
+                    npmProcess.stderr.on('data', (data) => {
+                        errorOutput += data.toString();
+                    });
+                    npmProcess.on('close', (code) => {
+                        if (code === 0) {
+                            vscode.window.showInformationMessage(`Successfully installed ${libraryName}!`);
+                            resolve();
+                        }
+                        else {
+                            console.error('npm install error:', errorOutput);
+                            vscode.window.showErrorMessage(`Failed to install ${libraryName}: ${errorOutput}`);
+                            reject(new Error(errorOutput));
+                        }
+                    });
+                    npmProcess.on('error', (error) => {
+                        console.error('npm install process error:', error);
+                        vscode.window.showErrorMessage(`Failed to start npm install: ${error.message}`);
+                        reject(error);
+                    });
+                });
+            });
+        }
+        catch (error) {
+            console.error('Failed to install library:', error);
+            vscode.window.showErrorMessage(`Failed to install library: ${error}`);
+        }
+    }
     _getHtmlForWebview(webview) {
         console.log('Strategic Code Companion: Generating HTML for webview');
         // For now, let's use a simple HTML without external resources to test
@@ -309,61 +517,133 @@ class SidebarProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Strategic Code Companion</title>
     <style>
+        :root {
+            --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --gradient-accent: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.08);
+            --shadow-medium: 0 8px 30px rgba(0, 0, 0, 0.12);
+            --shadow-strong: 0 12px 40px rgba(0, 0, 0, 0.15);
+            --border-radius: 12px;
+            --border-radius-lg: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: var(--vscode-font-family);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Open Sans', 'Helvetica Neue', sans-serif;
             color: var(--vscode-foreground);
-            background-color: var(--vscode-editor-background);
-            padding: 20px;
+            background: var(--vscode-editor-background);
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+            overflow-x: hidden;
         }
+        
         .container {
-            max-width: 600px;
-            margin: 0 auto;
+            max-width: 100%;
+            padding: 12px;
+            height: 100vh;
+            overflow-y: auto;
         }
+        
         .header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
+            position: relative;
         }
+        
         .logo {
-            font-size: 2em;
-            margin-bottom: 10px;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 1.8em;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.02em;
+        }
+        
+        .header p {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.9em;
+            margin: 0;
+            font-weight: 400;
         }
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 24px;
+            position: relative;
         }
+        
         label {
             display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
+            margin-bottom: 8px;
+            font-weight: 600;
+            font-size: 0.9em;
+            color: var(--vscode-foreground);
         }
+        
         select, input {
             width: 100%;
-            padding: 8px 12px;
-            border: 1px solid var(--vscode-input-border);
+            padding: 16px 20px;
+            border: 2px solid transparent;
             background: var(--vscode-input-background);
             color: var(--vscode-input-foreground);
-            border-radius: 4px;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            transition: var(--transition);
+            box-shadow: var(--shadow-soft);
         }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            transform: translateY(-1px);
+        }
+        
         button {
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
+            background: var(--gradient-primary);
+            color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
+            padding: 14px 28px;
+            border-radius: var(--border-radius);
             cursor: pointer;
             font-size: 14px;
+            font-weight: 600;
+            transition: var(--transition);
+            box-shadow: var(--shadow-soft);
+            position: relative;
+            overflow: hidden;
         }
+        
         button:hover {
-            background: var(--vscode-button-hoverBackground);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
         }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
         .help-text {
             font-size: 12px;
             color: var(--vscode-descriptionForeground);
-            margin-top: 5px;
+            margin-top: 8px;
+            line-height: 1.5;
         }
+        
         .main-btn {
-            padding: 15px 30px;
+            padding: 18px 36px;
             font-size: 16px;
-            margin: 20px 0;
+            margin: 24px 0;
+            width: 100%;
+            background: var(--gradient-accent);
+            font-weight: 700;
+            letter-spacing: 0.5px;
         }
         
         /* Professional Results Styling */
@@ -443,71 +723,129 @@ class SidebarProvider {
         .analysis-card {
             background: var(--vscode-editor-background);
             border: 1px solid var(--vscode-panel-border);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 16px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-radius: var(--border-radius-lg);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-soft);
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .analysis-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--gradient-primary);
+        }
+        
+        .analysis-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-medium);
         }
         
         .card-header {
             display: flex;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
+            position: relative;
         }
         
         .card-icon {
-            font-size: 24px;
-            margin-right: 12px;
+            font-size: 28px;
+            margin-right: 16px;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
         
         .card-title {
-            font-size: 18px;
-            font-weight: 600;
+            font-size: 20px;
+            font-weight: 700;
             margin: 0;
             color: var(--vscode-foreground);
+            letter-spacing: -0.01em;
         }
         
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin: 16px 0;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
         }
         
         .metric-item {
-            background: var(--vscode-input-background);
-            padding: 16px;
-            border-radius: 6px;
+            background: linear-gradient(135deg, var(--vscode-input-background) 0%, rgba(102, 126, 234, 0.05) 100%);
+            padding: 20px;
+            border-radius: var(--border-radius);
             border: 1px solid var(--vscode-input-border);
+            text-align: center;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .metric-item:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-soft);
+        }
+        
+        .metric-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--gradient-accent);
         }
         
         .metric-label {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--vscode-descriptionForeground);
             text-transform: uppercase;
-            margin-bottom: 4px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
         }
         
         .metric-value {
-            font-size: 24px;
-            font-weight: 600;
-            color: var(--vscode-foreground);
+            font-size: 32px;
+            font-weight: 800;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
         }
         
         .tech-tags {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
-            margin: 12px 0;
+            gap: 12px;
+            margin: 16px 0;
         }
         
         .tech-tag {
-            background: var(--vscode-badge-background);
+            background: linear-gradient(135deg, var(--vscode-badge-background) 0%, rgba(102, 126, 234, 0.1) 100%);
             color: var(--vscode-badge-foreground);
-            padding: 4px 12px;
-            border-radius: 16px;
+            padding: 8px 16px;
+            border-radius: 20px;
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 600;
+            border: 1px solid var(--vscode-panel-border);
+            transition: var(--transition);
+        }
+        
+        .tech-tag:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-soft);
+            background: var(--gradient-accent);
+            color: white;
         }
         
         /* Suggestion Cards */
@@ -571,53 +909,212 @@ class SidebarProvider {
         .library-card {
             background: var(--vscode-editor-background);
             border: 1px solid var(--vscode-panel-border);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 16px;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border-radius: var(--border-radius-lg);
+            padding: 24px;
+            margin-bottom: 24px;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-soft);
+        }
+        
+        .library-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-secondary);
         }
         
         .library-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-medium);
         }
         
         .library-header {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 12px;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        
+        .lib-title-section h4 {
+            margin: 0 0 8px 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--vscode-foreground);
+        }
+        
+        .lib-category-badge {
+            background: var(--gradient-accent);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .lib-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+        
+        .relevance-score {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .lib-description {
+            color: var(--vscode-descriptionForeground);
+            margin: 16px 0;
+            line-height: 1.6;
         }
         
         .library-stats {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
             gap: 16px;
-            font-size: 12px;
-            color: var(--vscode-descriptionForeground);
-            margin: 8px 0;
+            margin: 20px 0;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--vscode-input-background) 0%, rgba(102, 126, 234, 0.03) 100%);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--vscode-input-border);
         }
         
         .stat-item {
             display: flex;
+            flex-direction: column;
             align-items: center;
+            text-align: center;
             gap: 4px;
         }
         
-        .link-preview {
+        .stat-icon {
+            font-size: 16px;
+        }
+        
+        .stat-value {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--vscode-foreground);
+        }
+        
+        .stat-label {
+            font-size: 10px;
+            color: var(--vscode-descriptionForeground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .lib-content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        @media (max-width: 600px) {
+            .lib-content-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0 0 12px 0;
+            color: var(--vscode-foreground);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .benefit-list, .usecase-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .benefit-item, .usecase-item {
+            padding: 8px 0;
+            font-size: 13px;
+            color: var(--vscode-descriptionForeground);
+            border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+            position: relative;
+            padding-left: 16px;
+        }
+        
+        .benefit-item:before {
+            content: '✨';
+            position: absolute;
+            left: 0;
+            font-size: 12px;
+        }
+        
+        .usecase-item:before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .library-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .action-button {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 16px;
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
+            padding: 12px 16px;
+            border-radius: var(--border-radius);
             text-decoration: none;
-            border-radius: 4px;
-            font-size: 14px;
-            margin: 8px 8px 8px 0;
-            transition: background 0.2s ease;
+            font-size: 13px;
+            font-weight: 600;
+            transition: var(--transition);
+            border: none;
+            cursor: pointer;
+            flex: 1;
+            justify-content: center;
+            min-width: 120px;
         }
         
-        .link-preview:hover {
-            background: var(--vscode-button-hoverBackground);
+        .action-button.primary {
+            background: var(--gradient-primary);
+            color: white;
+        }
+        
+        .action-button.secondary {
+            background: var(--gradient-accent);
+            color: white;
+        }
+        
+        .action-button.install {
+            background: var(--gradient-secondary);
+            color: white;
+        }
+        
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-soft);
+        }
+        
+        .button-icon {
+            font-size: 16px;
         }
         
         /* Tutorial Cards */
@@ -633,6 +1130,288 @@ class SidebarProvider {
         .tutorial-card:hover {
             transform: translateY(-1px);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        }
+        
+        /* Enhanced Results Styling */
+        .recommendations-grid {
+            display: grid;
+            gap: 20px;
+            margin-top: 16px;
+        }
+        
+        .recommendation-card {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-left: 4px solid var(--vscode-button-background);
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        
+        .recommendation-card.priority-high {
+            border-left-color: #ff6b6b;
+            background: linear-gradient(135deg, rgba(255, 107, 107, 0.05) 0%, transparent 50%);
+        }
+        
+        .recommendation-card.priority-medium {
+            border-left-color: #ffa726;
+            background: linear-gradient(135deg, rgba(255, 167, 38, 0.05) 0%, transparent 50%);
+        }
+        
+        .recommendation-card.priority-low {
+            border-left-color: #66bb6a;
+            background: linear-gradient(135deg, rgba(102, 187, 106, 0.05) 0%, transparent 50%);
+        }
+        
+        .recommendation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .recommendation-header h4 {
+            margin: 0;
+            color: var(--vscode-editor-foreground);
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .priority-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .priority-badge.priority-high {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+        
+        .priority-badge.priority-medium {
+            background: rgba(255, 167, 38, 0.2);
+            color: #ffa726;
+        }
+        
+        .priority-badge.priority-low {
+            background: rgba(102, 187, 106, 0.2);
+            color: #66bb6a;
+        }
+        
+        .recommendation-description {
+            margin-bottom: 16px;
+            line-height: 1.5;
+            color: var(--vscode-descriptionForeground);
+        }
+        
+        .impact-metrics {
+            margin-bottom: 16px;
+        }
+        
+        .impact-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .impact-label {
+            min-width: 120px;
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+        }
+        
+        .impact-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--vscode-panel-border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .impact-fill {
+            height: 100%;
+            background: var(--vscode-button-background);
+            transition: width 0.3s ease;
+        }
+        
+        .impact-value {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--vscode-editor-foreground);
+            min-width: 30px;
+        }
+        
+        .justification {
+            margin-bottom: 16px;
+            padding: 12px;
+            background: rgba(var(--vscode-button-background-rgb, 0, 122, 204), 0.1);
+            border-radius: 6px;
+        }
+        
+        .justification strong {
+            color: var(--vscode-editor-foreground);
+        }
+        
+        .implementation-plan {
+            margin-bottom: 16px;
+        }
+        
+        .plan-meta {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        
+        .effort-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .effort-badge.effort-low {
+            background: rgba(102, 187, 106, 0.2);
+            color: #66bb6a;
+        }
+        
+        .effort-badge.effort-medium {
+            background: rgba(255, 167, 38, 0.2);
+            color: #ffa726;
+        }
+        
+        .effort-badge.effort-high {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+        
+        .timeframe {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+        }
+        
+        .implement-btn {
+            width: 100%;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, var(--vscode-button-background) 0%, var(--vscode-button-hoverBackground) 100%);
+            border: none;
+            border-radius: 6px;
+            color: var(--vscode-button-foreground);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .implement-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .opportunities-grid {
+            display: grid;
+            gap: 16px;
+            margin-top: 16px;
+        }
+        
+        .opportunity-card {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 8px;
+            padding: 16px;
+            transition: transform 0.2s ease;
+        }
+        
+        .opportunity-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        }
+        
+        .opportunity-meta {
+            display: flex;
+            gap: 12px;
+            margin: 12px 0;
+        }
+        
+        .impact-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .impact-badge.impact-high {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+        
+        .impact-badge.impact-medium {
+            background: rgba(255, 167, 38, 0.2);
+            color: #ffa726;
+        }
+        
+        .impact-badge.impact-low {
+            background: rgba(102, 187, 106, 0.2);
+            color: #66bb6a;
+        }
+        
+        .market-gap {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            font-style: italic;
+        }
+        
+        .trend-analysis {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--vscode-panel-border);
+            font-size: 13px;
+        }
+        
+        .strategy-content {
+            margin-top: 16px;
+        }
+        
+        .positioning-section, .growth-opportunities {
+            margin-bottom: 20px;
+        }
+        
+        .growth-item {
+            padding: 12px;
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+        
+        .potential-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            float: right;
+        }
+        
+        .potential-badge.potential-high {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+        
+        .potential-badge.potential-medium {
+            background: rgba(255, 167, 38, 0.2);
+            color: #ffa726;
+        }
+        
+        .potential-badge.potential-low {
+            background: rgba(102, 187, 106, 0.2);
+            color: #66bb6a;
         }
         
         .tutorial-meta {
@@ -711,6 +1490,20 @@ class SidebarProvider {
                 <div class="help-text">Your API key will be stored securely using VS Code's built-in encryption</div>
             </div>
             
+            <div class="advanced-section" style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--vscode-panel-border);">
+                <h4>🚀 Advanced Features (Optional)</h4>
+                <p class="help-text">Enable enhanced competitive analysis and market intelligence</p>
+                
+                <div class="form-group">
+                    <label for="composio-key-input">Composio API Key (Optional):</label>
+                    <input type="password" id="composio-key-input" placeholder="Enter Composio API key for enhanced analysis">
+                    <div class="help-text">
+                        Get your free API key at <a href="https://composio.dev/signup" target="_blank">composio.dev/signup</a>
+                        <br>Enables real-time GitHub integration and advanced competitive analysis
+                    </div>
+                </div>
+            </div>
+            
             <button id="save-key-btn">Save Configuration</button>
         </div>
         
@@ -727,7 +1520,6 @@ class SidebarProvider {
             <div style="margin-top: 30px;">
                 <button id="settings-btn">⚙️ Settings</button>
                 <button id="clear-key-btn" style="margin-left: 10px;">🗑️ Clear API Key</button>
-                <button id="test-results-btn" style="margin-left: 10px;">🧪 Test Results</button>
             </div>
         </div>
         
@@ -760,6 +1552,7 @@ class SidebarProvider {
                     <button class="tab-button" data-tab="architecture">🏗️ Architecture</button>
                     <button class="tab-button" data-tab="libraries">📚 Libraries</button>
                     <button class="tab-button" data-tab="tutorials">🎓 Tutorials</button>
+                    <button class="tab-button" data-tab="enhanced">🚀 Strategic Insights</button>
                 </div>
                 
                 <div class="tab-content">
@@ -778,6 +1571,9 @@ class SidebarProvider {
                     <div id="tutorials-content" class="tab-panel">
                         <div id="tutorials-data"></div>
                     </div>
+                    <div id="enhanced-content" class="tab-panel">
+                        <div id="enhanced-data"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -791,9 +1587,11 @@ class SidebarProvider {
             
             const provider = document.getElementById('provider-select').value;
             const apiKey = document.getElementById('api-key-input').value.trim();
+            const composioKey = document.getElementById('composio-key-input').value.trim();
             
             console.log('Strategic Code Companion Webview: Provider:', provider);
             console.log('Strategic Code Companion Webview: API key length:', apiKey.length);
+            console.log('Strategic Code Companion Webview: Composio key length:', composioKey.length);
             
             if (!apiKey) {
                 alert('Please enter an API key');
@@ -804,7 +1602,8 @@ class SidebarProvider {
             vscode.postMessage({
                 type: 'saveApiKey',
                 provider: provider,
-                apiKey: apiKey
+                apiKey: apiKey,
+                composioKey: composioKey || undefined
             });
             console.log('Strategic Code Companion Webview: Message sent');
         }
@@ -831,9 +1630,6 @@ class SidebarProvider {
             document.getElementById('main').style.display = 'block';
         }
         
-        function testResults() {
-            vscode.postMessage({ type: 'testResults' });
-        }
         
         // Add event listeners when DOM is loaded
         document.addEventListener('DOMContentLoaded', function() {
@@ -864,11 +1660,6 @@ class SidebarProvider {
                 clearKeyBtn.addEventListener('click', clearApiKey);
             }
             
-            // Test results button
-            const testResultsBtn = document.getElementById('test-results-btn');
-            if (testResultsBtn) {
-                testResultsBtn.addEventListener('click', testResults);
-            }
             
             // Back button
             const backBtn = document.getElementById('back-btn');
@@ -912,6 +1703,17 @@ class SidebarProvider {
             
             // Display Tutorials
             displayTutorials(results.tutorials);
+            
+            // Display Enhanced Results (if available)
+            if (results.enhanced) {
+                displayEnhancedResults(results.enhanced);
+                // Show the enhanced tab by default if available
+                switchTab('enhanced');
+            } else {
+                // Hide enhanced tab if not available
+                const enhancedTab = document.querySelector('[data-tab="enhanced"]');
+                if (enhancedTab) enhancedTab.style.display = 'none';
+            }
         }
         
         function displayOverview(analysis) {
@@ -1017,6 +1819,13 @@ class SidebarProvider {
                             \${suggestion.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
                         </ul>
                     </div>
+                    
+                    <div class="action-buttons" style="margin-top: 16px;">
+                        <button class="fix-it-btn" onclick="fixRefactoring('\${suggestion.id}', \${JSON.stringify(suggestion).replace(/"/g, '&quot;')})" 
+                                style="background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                            🔧 Fix It
+                        </button>
+                    </div>
                 </div>
             \`).join('');
             
@@ -1055,6 +1864,13 @@ class SidebarProvider {
                             \${feature.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
                         </ul>
                     </div>
+                    
+                    <div class="action-buttons" style="margin-top: 16px;">
+                        <button class="implement-btn" onclick="implementFeature('\${feature.id}', \${JSON.stringify(feature).replace(/"/g, '&quot;')})" 
+                                style="background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                            🚀 Implement Feature
+                        </button>
+                    </div>
                 </div>
             \`).join('');
             
@@ -1072,38 +1888,72 @@ class SidebarProvider {
             const html = libraries.recommendations.map(lib => \`
                 <div class="library-card">
                     <div class="library-header">
-                        <h4>\${lib.name}</h4>
-                        <span class="tech-tag">\${lib.language}</span>
+                        <div class="lib-title-section">
+                            <h4>\${lib.name}</h4>
+                            <div class="lib-category-badge">\${lib.category}</div>
+                        </div>
+                        <div class="lib-meta">
+                            <span class="tech-tag">\${lib.language}</span>
+                            <span class="relevance-score">📊 \${Math.round(lib.relevanceScore * 100)}% match</span>
+                        </div>
                     </div>
-                    <p>\${lib.description}</p>
+                    
+                    <p class="lib-description">\${lib.description}</p>
                     
                     <div class="library-stats">
                         <div class="stat-item">
-                            <span>⭐</span>
-                            <span>\${lib.stars.toLocaleString()}</span>
+                            <span class="stat-icon">⭐</span>
+                            <span class="stat-value">\${lib.stars.toLocaleString()}</span>
+                            <span class="stat-label">stars</span>
                         </div>
                         <div class="stat-item">
-                            <span>🍴</span>
-                            <span>\${lib.forks.toLocaleString()}</span>
+                            <span class="stat-icon">🍴</span>
+                            <span class="stat-value">\${lib.forks.toLocaleString()}</span>
+                            <span class="stat-label">forks</span>
                         </div>
                         <div class="stat-item">
-                            <span>📅</span>
-                            <span>\${new Date(lib.lastUpdated).toLocaleDateString()}</span>
+                            <span class="stat-icon">📅</span>
+                            <span class="stat-value">\${new Date(lib.lastUpdated).toLocaleDateString()}</span>
+                            <span class="stat-label">updated</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon">⚡</span>
+                            <span class="stat-value">\${lib.integrationEffort}</span>
+                            <span class="stat-label">effort</span>
                         </div>
                     </div>
                     
-                    <div class="benefits">
-                        <strong>Benefits:</strong>
-                        <ul>
-                            \${lib.benefits.map(benefit => \`<li>\${benefit}</li>\`).join('')}
-                        </ul>
+                    <div class="lib-content-grid">
+                        <div class="benefits-section">
+                            <h5 class="section-title">💡 Benefits</h5>
+                            <ul class="benefit-list">
+                                \${lib.benefits.slice(0, 3).map(benefit => \`<li class="benefit-item">\${benefit}</li>\`).join('')}
+                            </ul>
+                        </div>
+                        
+                        <div class="usecases-section">
+                            <h5 class="section-title">🎯 Use Cases</h5>
+                            <ul class="usecase-list">
+                                \${lib.useCases.slice(0, 3).map(useCase => \`<li class="usecase-item">\${useCase}</li>\`).join('')}
+                            </ul>
+                        </div>
                     </div>
                     
-                    <div class="library-links">
-                        <a href="\${lib.githubUrl}" class="link-preview" onclick="openUrl('\${lib.githubUrl}')">
-                            📱 GitHub
+                    <div class="library-actions">
+                        <a href="\${lib.githubUrl}" class="action-button primary" onclick="openUrl('\${lib.githubUrl}')">
+                            <span class="button-icon">📱</span>
+                            <span>View on GitHub</span>
                         </a>
-                        \${lib.npmUrl ? \`<a href="\${lib.npmUrl}" class="link-preview" onclick="openUrl('\${lib.npmUrl}')">📦 NPM</a>\` : ''}
+                        \${lib.npmUrl ? \`
+                            <a href="\${lib.npmUrl}" class="action-button secondary" onclick="openUrl('\${lib.npmUrl}')">
+                                <span class="button-icon">📦</span>
+                                <span>NPM Package</span>
+                            </a>
+                        \` : ''}
+                        <button class="action-button install" onclick="installLibrary('\${lib.name}')">
+                            <span class="button-icon">⚡</span>
+                            <span>Quick Install</span>
+                        </button>
                     </div>
                 </div>
             \`).join('');
@@ -1150,11 +2000,192 @@ class SidebarProvider {
             container.innerHTML = html;
         }
         
+        function displayEnhancedResults(enhanced) {
+            const container = document.getElementById('enhanced-data');
+            
+            if (!enhanced) {
+                container.innerHTML = '<p>Enhanced analysis not available.</p>';
+                return;
+            }
+            
+            let html = '';
+            
+            // Unique Recommendations Section
+            if (enhanced.uniqueRecommendations && enhanced.uniqueRecommendations.length > 0) {
+                html += \`
+                    <div class="analysis-card">
+                        <div class="card-header">
+                            <span class="card-icon">🎯</span>
+                            <h3 class="card-title">Unique Value Propositions</h3>
+                        </div>
+                        <div class="recommendations-grid">
+                            \${enhanced.uniqueRecommendations.map(rec => \`
+                                <div class="recommendation-card priority-\${rec.priority}">
+                                    <div class="recommendation-header">
+                                        <h4>\${rec.title}</h4>
+                                        <span class="priority-badge priority-\${rec.priority}">\${rec.priority}</span>
+                                    </div>
+                                    <p class="recommendation-description">\${rec.description}</p>
+                                    
+                                    <div class="impact-metrics">
+                                        <div class="impact-item">
+                                            <span class="impact-label">User Experience</span>
+                                            <div class="impact-bar">
+                                                <div class="impact-fill" style="width: \${rec.businessImpact.userExperience * 10}%"></div>
+                                            </div>
+                                            <span class="impact-value">\${rec.businessImpact.userExperience}/10</span>
+                                        </div>
+                                        <div class="impact-item">
+                                            <span class="impact-label">Market Differentiation</span>
+                                            <div class="impact-bar">
+                                                <div class="impact-fill" style="width: \${rec.businessImpact.marketDifferentiation * 10}%"></div>
+                                            </div>
+                                            <span class="impact-value">\${rec.businessImpact.marketDifferentiation}/10</span>
+                                        </div>
+                                        <div class="impact-item">
+                                            <span class="impact-label">Business Value</span>
+                                            <div class="impact-bar">
+                                                <div class="impact-fill" style="width: \${rec.businessImpact.businessValue * 10}%"></div>
+                                            </div>
+                                            <span class="impact-value">\${rec.businessImpact.businessValue}/10</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="justification">
+                                        <strong>Why This Creates Competitive Advantage:</strong>
+                                        <p>\${rec.justification.businessRationale}</p>
+                                        <p><strong>Market Gap:</strong> \${rec.justification.marketGap}</p>
+                                    </div>
+                                    
+                                    <div class="implementation-plan">
+                                        <strong>Implementation:</strong>
+                                        <div class="plan-meta">
+                                            <span class="effort-badge effort-\${rec.implementationPlan.effort}">\${rec.implementationPlan.effort} effort</span>
+                                            <span class="timeframe">\${rec.implementationPlan.timeframe}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="implement-btn" onclick="implementRecommendation('\${rec.id}', \${JSON.stringify(rec).replace(/"/g, '&quot;')})">
+                                        <span class="button-icon">🚀</span>
+                                        <span>Implement This Feature</span>
+                                    </button>
+                                </div>
+                            \`).join('')}
+                        </div>
+                    </div>
+                \`;
+            }
+            
+            // Competitive Analysis Section
+            if (enhanced.competitiveAnalysis && enhanced.competitiveAnalysis.innovationOpportunities.length > 0) {
+                html += \`
+                    <div class="analysis-card">
+                        <div class="card-header">
+                            <span class="card-icon">🏆</span>
+                            <h3 class="card-title">Innovation Opportunities</h3>
+                        </div>
+                        <div class="opportunities-grid">
+                            \${enhanced.competitiveAnalysis.innovationOpportunities.map(opp => \`
+                                <div class="opportunity-card impact-\${opp.potentialImpact}">
+                                    <h4>\${opp.opportunity}</h4>
+                                    <p>\${opp.description}</p>
+                                    <div class="opportunity-meta">
+                                        <span class="impact-badge impact-\${opp.potentialImpact}">\${opp.potentialImpact} impact</span>
+                                        <span class="market-gap">\${opp.marketGap}</span>
+                                    </div>
+                                    <div class="trend-analysis">
+                                        <strong>Trend Analysis:</strong> \${opp.trendAnalysis}
+                                    </div>
+                                </div>
+                            \`).join('')}
+                        </div>
+                    </div>
+                \`;
+            }
+            
+            // Business Strategy Section
+            if (enhanced.businessStrategy) {
+                const strategy = enhanced.businessStrategy;
+                html += \`
+                    <div class="analysis-card">
+                        <div class="card-header">
+                            <span class="card-icon">📈</span>
+                            <h3 class="card-title">Strategic Positioning</h3>
+                        </div>
+                        <div class="strategy-content">
+                            <div class="positioning-section">
+                                <h4>Market Position</h4>
+                                <p><strong>Current:</strong> \${strategy.marketPositioning.currentPosition}</p>
+                                <p><strong>Target:</strong> \${strategy.marketPositioning.targetPosition}</p>
+                                
+                                <div class="differentiators">
+                                    <h5>Key Differentiators:</h5>
+                                    <ul>
+                                        \${strategy.marketPositioning.differentiators.map(diff => \`<li>\${diff}</li>\`).join('')}
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="growth-opportunities">
+                                <h4>Growth Opportunities</h4>
+                                \${strategy.growthOpportunities.map(opp => \`
+                                    <div class="growth-item potential-\${opp.potential}">
+                                        <strong>\${opp.opportunity}</strong>
+                                        <p>\${opp.strategy}</p>
+                                        <span class="potential-badge potential-\${opp.potential}">\${opp.potential} potential</span>
+                                    </div>
+                                \`).join('')}
+                            </div>
+                        </div>
+                    </div>
+                \`;
+            }
+            
+            container.innerHTML = html || '<p>No enhanced analysis available.</p>';
+        }
+        
+        function implementRecommendation(recId, recommendation) {
+            console.log('Implementing recommendation:', recId);
+            vscode.postMessage({
+                type: 'implementRecommendation',
+                recommendationId: recId,
+                recommendation: recommendation
+            });
+        }
+        
         function openUrl(url) {
             vscode.postMessage({
                 type: 'openUrl',
                 url: url
             });
+        }
+        
+        function fixRefactoring(suggestionId, suggestion) {
+            console.log('Fixing refactoring:', suggestionId);
+            vscode.postMessage({
+                type: 'fixRefactoring',
+                suggestionId: suggestionId,
+                suggestion: suggestion
+            });
+        }
+        
+        function implementFeature(featureId, feature) {
+            console.log('Implementing feature:', featureId);
+            vscode.postMessage({
+                type: 'implementFeature',
+                featureId: featureId,
+                feature: feature
+            });
+        }
+        
+        function installLibrary(libraryName) {
+            console.log('Installing library:', libraryName);
+            if (confirm(\`Install \${libraryName} via npm?\`)) {
+                vscode.postMessage({
+                    type: 'installLibrary',
+                    libraryName: libraryName
+                });
+            }
         }
         
         // Listen for messages from extension

@@ -7,6 +7,10 @@ import { RefactorAgent } from './RefactorAgent';
 import { ArchitectAgent } from './ArchitectAgent';
 import { LibrarianAgent } from './LibrarianAgent';
 import { TutorAgent } from './TutorAgent';
+import { OpenAIAgentOrchestrator, EnhancedAgentResults, UniqueRecommendation, BusinessStrategy } from '../services/OpenAIAgentOrchestrator';
+
+// Export enhanced types for external use
+export { EnhancedAgentResults, UniqueRecommendation, BusinessStrategy };
 
 export interface CodebaseAnalysis {
     overall_summary: string;
@@ -29,6 +33,7 @@ export interface AgentResults {
     architecture: any;
     libraries: any;
     tutorials: any;
+    enhanced?: EnhancedAgentResults; // New enhanced results from advanced agents
 }
 
 export class MultiAgentOrchestrator {
@@ -37,13 +42,21 @@ export class MultiAgentOrchestrator {
     private architectAgent: ArchitectAgent;
     private librarianAgent: LibrarianAgent;
     private tutorAgent: TutorAgent;
+    private enhancedOrchestrator: OpenAIAgentOrchestrator;
+    private useEnhancedAgents: boolean = true;
 
-    constructor(llmProvider: LLMProvider) {
+    constructor(llmProvider: LLMProvider, composioApiKey?: string) {
         this.llmProvider = llmProvider;
         this.refactorAgent = new RefactorAgent(llmProvider);
         this.architectAgent = new ArchitectAgent(llmProvider);
         this.librarianAgent = new LibrarianAgent();
         this.tutorAgent = new TutorAgent();
+        this.enhancedOrchestrator = new OpenAIAgentOrchestrator(llmProvider);
+        
+        // Initialize enhanced orchestrator with Composio API key
+        if (composioApiKey) {
+            this.enhancedOrchestrator.initialize(composioApiKey);
+        }
     }
 
     async analyzeCodebase(chunks: CodeChunk[]): Promise<AgentResults> {
@@ -61,17 +74,55 @@ export class MultiAgentOrchestrator {
                 this.tutorAgent.findTutorials(analysis, chunks)
             ]);
 
+            // Step 3: Run enhanced agent analysis for unique value propositions
+            let enhanced: EnhancedAgentResults | undefined;
+            if (this.useEnhancedAgents) {
+                try {
+                    console.log('Running enhanced agent analysis...');
+                    enhanced = await this.enhancedOrchestrator.analyzeWithEnhancedAgents(analysis, chunks);
+                    console.log('Enhanced analysis completed successfully');
+                    
+                    // If enhanced analysis succeeded, prioritize showing it
+                    if (enhanced && enhanced.uniqueRecommendations.length > 0) {
+                        console.log('Enhanced analysis has', enhanced.uniqueRecommendations.length, 'unique recommendations');
+                    }
+                } catch (error) {
+                    console.warn('Enhanced agent analysis failed, continuing without it:', error);
+                    enhanced = undefined;
+                    // If enhanced agents fail due to API issues, disable them for this session
+                    if (error instanceof Error && (error.message.includes('API') || error.message.includes('overloaded'))) {
+                        console.log('Disabling enhanced agents due to API issues');
+                        this.useEnhancedAgents = false;
+                    }
+                }
+            }
+
             return {
                 analysis,
                 refactoring,
                 architecture,
                 libraries,
-                tutorials
+                tutorials,
+                enhanced
             };
         } catch (error) {
             console.error('Analysis failed:', error);
             throw new Error(`Multi-agent analysis failed: ${error}`);
         }
+    }
+
+    /**
+     * Configure enhanced agent settings
+     */
+    setEnhancedAgents(enabled: boolean): void {
+        this.useEnhancedAgents = enabled;
+    }
+
+    /**
+     * Initialize enhanced agents with API keys
+     */
+    async initializeEnhancedAgents(composioApiKey: string): Promise<void> {
+        await this.enhancedOrchestrator.initialize(composioApiKey);
     }
 
     private async performInitialAnalysis(chunks: CodeChunk[]): Promise<CodebaseAnalysis> {

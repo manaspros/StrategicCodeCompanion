@@ -9,20 +9,22 @@ class LibrarianAgent {
     constructor() { }
     async findRelevantLibraries(analysis, codeChunks) {
         try {
-            // Analyze actual code patterns to suggest relevant libraries
-            const codePatterns = this.analyzeCodePatterns(codeChunks, analysis);
-            const searchQueries = this.generateSmartSearchQueries(analysis, codePatterns);
+            // Step 1: Analyze functionality gaps and potential improvements
+            const functionalityAnalysis = await this.analyzeFunctionalityGaps(analysis, codeChunks);
+            console.log('LibrarianAgent: Functionality analysis:', functionalityAnalysis);
+            // Step 2: Generate targeted searches based on functionality needs
+            const functionalityQueries = this.generateFunctionalityBasedQueries(functionalityAnalysis, analysis);
+            console.log('LibrarianAgent: Functionality-based queries:', functionalityQueries);
             const recommendations = [];
-            console.log('LibrarianAgent: Generated search queries:', searchQueries);
-            // Search for repositories for each query
-            for (const query of searchQueries) {
+            // Search for libraries that add specific functionality
+            for (const query of functionalityQueries) {
                 try {
-                    const repos = await this.searchGitHubRepos(query);
-                    const processedRepos = await this.processRepositories(repos, analysis, codePatterns);
+                    const repos = await this.searchGitHubRepos(query.searchTerm);
+                    const processedRepos = await this.processRepositories(repos, analysis, query);
                     recommendations.push(...processedRepos);
                 }
                 catch (error) {
-                    console.warn(`Failed to search for "${query}":`, error);
+                    console.warn(`Failed to search for "${query.searchTerm}":`, error);
                 }
             }
             // Remove duplicates and sort by relevance
@@ -35,8 +37,231 @@ class LibrarianAgent {
         }
         catch (error) {
             console.error('Failed to find relevant libraries:', error);
-            return this.createFallbackRecommendations(analysis);
+            return {
+                recommendations: [],
+                summary: {
+                    totalRecommendations: 0,
+                    byCategory: {},
+                    highRelevance: 0,
+                    easyIntegration: 0
+                }
+            };
         }
+    }
+    async analyzeFunctionalityGaps(analysis, codeChunks) {
+        const functionality = {
+            // User Experience Enhancements
+            missingUXFeatures: [],
+            // Performance Opportunities  
+            performanceGaps: [],
+            // Security Improvements
+            securityNeeds: [],
+            // Developer Experience
+            devExperienceGaps: [],
+            // Business Value Features
+            businessValueGaps: [],
+            // Modern Web Features
+            modernWebGaps: []
+        };
+        // Analyze based on project type and existing code
+        if (analysis.project_type === 'web-app') {
+            // UX Enhancement opportunities
+            const hasModals = codeChunks.some(chunk => chunk.content.toLowerCase().includes('modal'));
+            const hasToasts = codeChunks.some(chunk => chunk.content.toLowerCase().includes('toast') || chunk.content.toLowerCase().includes('notification'));
+            const hasLoading = codeChunks.some(chunk => chunk.content.toLowerCase().includes('loading') || chunk.content.toLowerCase().includes('spinner'));
+            const hasValidation = codeChunks.some(chunk => chunk.content.toLowerCase().includes('validation') || chunk.content.toLowerCase().includes('validate'));
+            const hasSearch = codeChunks.some(chunk => chunk.content.toLowerCase().includes('search') || chunk.content.toLowerCase().includes('filter'));
+            const hasDragDrop = codeChunks.some(chunk => chunk.content.toLowerCase().includes('drag') || chunk.content.toLowerCase().includes('drop'));
+            if (!hasModals)
+                functionality.missingUXFeatures.push('interactive-modals');
+            if (!hasToasts)
+                functionality.missingUXFeatures.push('notification-system');
+            if (!hasLoading)
+                functionality.missingUXFeatures.push('loading-states');
+            if (!hasValidation)
+                functionality.missingUXFeatures.push('form-validation');
+            if (!hasSearch)
+                functionality.missingUXFeatures.push('search-functionality');
+            if (!hasDragDrop)
+                functionality.missingUXFeatures.push('drag-drop-interactions');
+            // Performance opportunities
+            const hasLazyLoading = codeChunks.some(chunk => chunk.content.toLowerCase().includes('lazy'));
+            const hasVirtualization = codeChunks.some(chunk => chunk.content.toLowerCase().includes('virtual'));
+            const hasImageOptimization = codeChunks.some(chunk => chunk.content.toLowerCase().includes('image') && chunk.content.toLowerCase().includes('optimization'));
+            if (!hasLazyLoading)
+                functionality.performanceGaps.push('lazy-loading');
+            if (!hasVirtualization)
+                functionality.performanceGaps.push('virtualization');
+            if (!hasImageOptimization)
+                functionality.performanceGaps.push('image-optimization');
+            // Modern web features
+            const hasPWA = codeChunks.some(chunk => chunk.content.toLowerCase().includes('service-worker') || chunk.content.toLowerCase().includes('pwa'));
+            const hasOffline = codeChunks.some(chunk => chunk.content.toLowerCase().includes('offline'));
+            const hasWebRTC = codeChunks.some(chunk => chunk.content.toLowerCase().includes('webrtc'));
+            if (!hasPWA)
+                functionality.modernWebGaps.push('progressive-web-app');
+            if (!hasOffline)
+                functionality.modernWebGaps.push('offline-functionality');
+            if (!hasWebRTC)
+                functionality.modernWebGaps.push('real-time-communication');
+            // Business value features
+            const hasAnalytics = codeChunks.some(chunk => chunk.content.toLowerCase().includes('analytics') || chunk.content.toLowerCase().includes('tracking'));
+            const hasA11y = codeChunks.some(chunk => chunk.content.toLowerCase().includes('accessibility') || chunk.content.toLowerCase().includes('aria'));
+            const hasI18n = codeChunks.some(chunk => chunk.content.toLowerCase().includes('i18n') || chunk.content.toLowerCase().includes('internationalization'));
+            if (!hasAnalytics)
+                functionality.businessValueGaps.push('user-analytics');
+            if (!hasA11y)
+                functionality.businessValueGaps.push('accessibility');
+            if (!hasI18n)
+                functionality.businessValueGaps.push('internationalization');
+        }
+        // Security analysis
+        const hasAuth = codeChunks.some(chunk => chunk.content.toLowerCase().includes('auth'));
+        const hasEncryption = codeChunks.some(chunk => chunk.content.toLowerCase().includes('encrypt') || chunk.content.toLowerCase().includes('crypto'));
+        const hasRateLimit = codeChunks.some(chunk => chunk.content.toLowerCase().includes('rate') && chunk.content.toLowerCase().includes('limit'));
+        if (!hasAuth)
+            functionality.securityNeeds.push('authentication-system');
+        if (!hasEncryption)
+            functionality.securityNeeds.push('data-encryption');
+        if (!hasRateLimit)
+            functionality.securityNeeds.push('rate-limiting');
+        return functionality;
+    }
+    generateFunctionalityBasedQueries(functionalityAnalysis, analysis) {
+        const queries = [];
+        // Focus on unique value propositions and differentiating features
+        // UX Enhancement queries - focus on unique, standout features
+        functionalityAnalysis.missingUXFeatures.forEach((feature) => {
+            switch (feature) {
+                case 'interactive-modals':
+                    queries.push({
+                        searchTerm: 'headless modal dialog unstyled accessible component library',
+                        functionality: 'Unique User Experience',
+                        priority: 'high',
+                        description: 'Create distinctive modal experiences that set your product apart'
+                    });
+                    break;
+                case 'notification-system':
+                    queries.push({
+                        searchTerm: 'innovative toast notification unique animation library',
+                        functionality: 'Memorable User Feedback',
+                        priority: 'high',
+                        description: 'Implement unique notification patterns that users remember'
+                    });
+                    break;
+                case 'drag-drop-interactions':
+                    queries.push({
+                        searchTerm: 'beautiful drag drop animation gesture library',
+                        functionality: 'Engaging Interactions',
+                        priority: 'medium',
+                        description: 'Create delightful drag-drop experiences that wow users'
+                    });
+                    break;
+                case 'search-functionality':
+                    queries.push({
+                        searchTerm: 'intelligent search fuzzy autocomplete smart filtering',
+                        functionality: 'Smart Discovery',
+                        priority: 'high',
+                        description: 'Add AI-powered search that understands user intent'
+                    });
+                    break;
+            }
+        });
+        // Performance enhancement queries - focus on cutting-edge optimizations
+        functionalityAnalysis.performanceGaps.forEach((gap) => {
+            switch (gap) {
+                case 'lazy-loading':
+                    queries.push({
+                        searchTerm: 'intersection observer lazy loading progressive image enhancement',
+                        functionality: 'Performance Excellence',
+                        priority: 'high',
+                        description: 'Implement next-gen loading strategies for superior performance'
+                    });
+                    break;
+                case 'virtualization':
+                    queries.push({
+                        searchTerm: 'windowing virtualization large dataset rendering library',
+                        functionality: 'Scale Excellence',
+                        priority: 'medium',
+                        description: 'Handle massive datasets with enterprise-grade virtualization'
+                    });
+                    break;
+                case 'image-optimization':
+                    queries.push({
+                        searchTerm: 'next-gen image format webp avif optimization library',
+                        functionality: 'Modern Performance',
+                        priority: 'high',
+                        description: 'Leverage latest image technologies for competitive advantage'
+                    });
+                    break;
+            }
+        });
+        // Modern web features - focus on cutting-edge capabilities
+        functionalityAnalysis.modernWebGaps.forEach((gap) => {
+            switch (gap) {
+                case 'progressive-web-app':
+                    queries.push({
+                        searchTerm: 'offline-first PWA background sync push notifications',
+                        functionality: 'App-like Experience',
+                        priority: 'medium',
+                        description: 'Transform into a native-quality web app'
+                    });
+                    break;
+                case 'real-time-communication':
+                    queries.push({
+                        searchTerm: 'real-time collaboration websocket peer-to-peer library',
+                        functionality: 'Live Collaboration',
+                        priority: 'medium',
+                        description: 'Enable real-time collaboration features'
+                    });
+                    break;
+            }
+        });
+        // Business value features - focus on competitive advantages
+        functionalityAnalysis.businessValueGaps.forEach((gap) => {
+            switch (gap) {
+                case 'user-analytics':
+                    queries.push({
+                        searchTerm: 'privacy-first analytics user behavior heatmap library',
+                        functionality: 'Intelligent Insights',
+                        priority: 'high',
+                        description: 'Gain deep user insights while respecting privacy'
+                    });
+                    break;
+                case 'accessibility':
+                    queries.push({
+                        searchTerm: 'inclusive design accessibility automation testing library',
+                        functionality: 'Universal Access',
+                        priority: 'high',
+                        description: 'Create inclusive experiences that reach everyone'
+                    });
+                    break;
+                case 'internationalization':
+                    queries.push({
+                        searchTerm: 'intelligent localization dynamic translation library',
+                        functionality: 'Global Reach',
+                        priority: 'medium',
+                        description: 'Expand globally with smart localization'
+                    });
+                    break;
+            }
+        });
+        // Add unique competitive features based on project type
+        if (analysis.project_type === 'web-app') {
+            queries.push({
+                searchTerm: 'micro-interactions animation library delightful UX',
+                functionality: 'Premium Experience',
+                priority: 'high',
+                description: 'Add premium micro-interactions that create emotional connection'
+            });
+            queries.push({
+                searchTerm: 'machine learning recommendation personalization library',
+                functionality: 'AI-Powered Features',
+                priority: 'medium',
+                description: 'Integrate AI to personalize user experiences'
+            });
+        }
+        return queries.slice(0, 8); // Increased to allow more unique suggestions
     }
     analyzeCodePatterns(codeChunks, analysis) {
         const patterns = {
@@ -203,65 +428,14 @@ class LibrarianAgent {
         }
     }
     getFallbackRepos(query) {
-        // Curated list of high-quality, innovative libraries
-        const fallbackLibraries = [
-            {
-                id: '1',
-                name: 'framer-motion',
-                description: 'A production-ready motion library for React. Utilize the power behind Framer, the best prototyping tool for teams.',
-                html_url: 'https://github.com/framer/motion',
-                stargazers_count: 22000,
-                forks_count: 820,
-                language: 'TypeScript',
-                updated_at: '2024-01-15T10:30:00Z',
-                license: { name: 'MIT License' }
-            },
-            {
-                id: '2',
-                name: 'react-hook-form',
-                description: 'Performant, flexible and extensible forms with easy validation.',
-                html_url: 'https://github.com/react-hook-form/react-hook-form',
-                stargazers_count: 39000,
-                forks_count: 1960,
-                language: 'TypeScript',
-                updated_at: '2024-01-10T14:20:00Z',
-                license: { name: 'MIT License' }
-            },
-            {
-                id: '3',
-                name: 'zustand',
-                description: 'A small, fast and scalable bearbones state-management solution using simplified flux principles.',
-                html_url: 'https://github.com/pmndrs/zustand',
-                stargazers_count: 35000,
-                forks_count: 1080,
-                language: 'TypeScript',
-                updated_at: '2024-01-12T09:15:00Z',
-                license: { name: 'MIT License' }
-            },
-            {
-                id: '4',
-                name: 'react-query',
-                description: 'Hooks for fetching, caching and updating asynchronous data in React.',
-                html_url: 'https://github.com/TanStack/query',
-                stargazers_count: 38000,
-                forks_count: 2600,
-                language: 'TypeScript',
-                updated_at: '2024-01-08T16:45:00Z',
-                license: { name: 'MIT License' }
-            }
-        ];
-        // Filter based on query relevance
-        return fallbackLibraries.filter(lib => {
-            const queryWords = query.toLowerCase().split(' ');
-            const libText = `${lib.name} ${lib.description}`.toLowerCase();
-            return queryWords.some(word => libText.includes(word));
-        }).slice(0, 3);
+        // Return empty array - no fallback data
+        return [];
     }
-    async processRepositories(repos, analysis, codePatterns) {
+    async processRepositories(repos, analysis, query) {
         const recommendations = [];
         for (const repo of repos) {
             try {
-                const recommendation = await this.createRecommendation(repo, analysis);
+                const recommendation = await this.createRecommendation(repo, analysis, query);
                 if (recommendation) {
                     recommendations.push(recommendation);
                 }
@@ -272,7 +446,7 @@ class LibrarianAgent {
         }
         return recommendations;
     }
-    async createRecommendation(repo, analysis) {
+    async createRecommendation(repo, analysis, query) {
         // Calculate relevance score based on various factors
         const relevanceScore = this.calculateRelevanceScore(repo, analysis);
         if (relevanceScore < 0.3) {
@@ -294,8 +468,8 @@ class LibrarianAgent {
             category,
             relevanceScore: Math.round(relevanceScore * 100) / 100,
             integrationEffort,
-            benefits: this.generateBenefits(repo, category),
-            useCases: this.generateUseCases(repo, category),
+            benefits: this.generateFunctionalityBenefits(repo, category, query),
+            useCases: this.generateFunctionalityUseCases(repo, category, query),
             alternatives: [] // Could be enhanced with more API calls
         };
     }
@@ -402,6 +576,111 @@ class LibrarianAgent {
         };
         return categoryUseCases[category] || ['General development tasks'];
     }
+    generateFunctionalityBenefits(repo, category, query) {
+        const baseBenefits = [
+            `${repo.stargazers_count.toLocaleString()} GitHub stars indicate community trust`,
+            'Well-maintained open source project'
+        ];
+        if (query?.functionality && query?.description) {
+            // Add functionality-specific benefits
+            const functionalityBenefits = [
+                query.description,
+                `Enhances ${query.functionality.toLowerCase()}`,
+                `Priority: ${query.priority} impact on user experience`
+            ];
+            // Add specific benefits based on functionality type
+            if (query.functionality.includes('Performance')) {
+                functionalityBenefits.push('Improves app speed and responsiveness');
+            }
+            else if (query.functionality.includes('User Interface')) {
+                functionalityBenefits.push('Enhances user interaction and engagement');
+            }
+            else if (query.functionality.includes('Business')) {
+                functionalityBenefits.push('Drives business value and user insights');
+            }
+            else if (query.functionality.includes('Modern Web')) {
+                functionalityBenefits.push('Leverages latest web technologies');
+            }
+            return [...baseBenefits, ...functionalityBenefits];
+        }
+        // Fallback to category-based benefits
+        const categoryBenefits = {
+            'utility': ['Reduces boilerplate code', 'Saves development time'],
+            'framework': ['Structured development approach', 'Built-in best practices'],
+            'testing': ['Improves code quality', 'Automated testing capabilities'],
+            'build-tool': ['Optimized build process', 'Better developer experience'],
+            'ui-component': ['Consistent UI components', 'Faster UI development'],
+            'data-processing': ['Efficient data handling', 'Reduced complexity'],
+            'security': ['Enhanced application security', 'Industry-standard practices'],
+            'performance': ['Improved application speed', 'Better resource utilization']
+        };
+        return [...baseBenefits, ...(categoryBenefits[category] || [])];
+    }
+    generateFunctionalityUseCases(repo, category, query) {
+        if (query?.functionality) {
+            // Generate use cases based on functionality type
+            const functionalityUseCases = {
+                'User Interface Enhancement': [
+                    'Improve user interaction patterns',
+                    'Create engaging user experiences',
+                    'Modernize interface components'
+                ],
+                'Performance Optimization': [
+                    'Reduce loading times',
+                    'Optimize resource usage',
+                    'Improve perceived performance'
+                ],
+                'User Feedback System': [
+                    'Notify users of actions',
+                    'Provide status updates',
+                    'Enhance user communication'
+                ],
+                'Interactive Features': [
+                    'Enable drag-and-drop workflows',
+                    'Create intuitive interactions',
+                    'Improve data manipulation'
+                ],
+                'Data Discovery': [
+                    'Enable powerful search capabilities',
+                    'Implement filtering systems',
+                    'Improve content findability'
+                ],
+                'Business Intelligence': [
+                    'Track user behavior',
+                    'Measure feature usage',
+                    'Optimize conversion rates'
+                ],
+                'Accessibility': [
+                    'Support screen readers',
+                    'Ensure keyboard navigation',
+                    'Meet WCAG guidelines'
+                ],
+                'Modern Web Features': [
+                    'Enable offline functionality',
+                    'Add app-like experience',
+                    'Leverage modern browser APIs'
+                ],
+                'Real-time Features': [
+                    'Enable live updates',
+                    'Support collaborative features',
+                    'Implement real-time communication'
+                ]
+            };
+            return functionalityUseCases[query.functionality] || ['Enhance application functionality'];
+        }
+        // Fallback to category-based use cases
+        const categoryUseCases = {
+            'utility': ['General purpose development', 'Code simplification'],
+            'framework': ['Application architecture', 'Rapid prototyping'],
+            'testing': ['Unit testing', 'Integration testing', 'Test automation'],
+            'build-tool': ['Build optimization', 'Asset bundling', 'Development workflow'],
+            'ui-component': ['User interface development', 'Design system implementation'],
+            'data-processing': ['Data transformation', 'API integration', 'Data validation'],
+            'security': ['Authentication', 'Authorization', 'Data protection'],
+            'performance': ['Performance optimization', 'Caching', 'Resource management']
+        };
+        return categoryUseCases[category] || ['General development tasks'];
+    }
     generateNpmUrl(repo) {
         // Simple heuristic to generate npm URL
         if (repo.language === 'JavaScript' || repo.language === 'TypeScript') {
@@ -437,32 +716,6 @@ class LibrarianAgent {
             byCategory,
             highRelevance,
             easyIntegration
-        };
-    }
-    createFallbackRecommendations(analysis) {
-        const recommendations = [
-            {
-                id: 'lodash',
-                name: 'lodash',
-                description: 'A modern JavaScript utility library delivering modularity, performance & extras.',
-                githubUrl: 'https://github.com/lodash/lodash',
-                npmUrl: 'https://www.npmjs.com/package/lodash',
-                stars: 55000,
-                forks: 6700,
-                lastUpdated: new Date().toISOString(),
-                language: 'JavaScript',
-                license: 'MIT',
-                category: 'utility',
-                relevanceScore: 0.9,
-                integrationEffort: 'low',
-                benefits: ['Reduces boilerplate code', 'Well-tested utility functions', 'Wide community adoption'],
-                useCases: ['Data manipulation', 'Array/Object operations', 'Functional programming'],
-                alternatives: ['Ramda', 'Underscore.js']
-            }
-        ];
-        return {
-            recommendations,
-            summary: this.generateSummary(recommendations)
         };
     }
 }

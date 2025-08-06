@@ -31,7 +31,15 @@ class TutorAgent {
         }
         catch (error) {
             console.error('Failed to find tutorials:', error);
-            return this.createFallbackTutorials(analysis);
+            return {
+                tutorials: [],
+                summary: {
+                    totalTutorials: 0,
+                    byDifficulty: {},
+                    byPlatform: {},
+                    averageRelevance: 0
+                }
+            };
         }
     }
     analyzeLearningNeeds(codeChunks, analysis) {
@@ -71,56 +79,72 @@ class TutorAgent {
     }
     generateContextualSearchQueries(analysis, learningNeeds, refactoring, architecture) {
         const queries = [];
-        // Add queries based on identified learning needs
+        // Focus on skills that create unique competitive advantages
         learningNeeds.missingSkills.forEach((skill) => {
             if (skill.includes('typescript')) {
                 queries.push({
-                    terms: 'TypeScript migration tutorial advanced',
+                    terms: 'advanced type system design generic programming',
                     context: 'general',
                     difficulty: 'advanced'
                 });
             }
             else if (skill.includes('modern-javascript')) {
                 queries.push({
-                    terms: 'modern JavaScript ES6+ tutorial',
+                    terms: 'functional programming immutable data structures advanced patterns',
                     context: 'general',
-                    difficulty: 'intermediate'
+                    difficulty: 'advanced'
                 });
             }
             else if (skill.includes('advanced-react')) {
                 queries.push({
-                    terms: 'React advanced patterns hooks tutorial',
+                    terms: 'concurrent rendering suspense custom hooks advanced',
                     context: 'general',
                     difficulty: 'advanced'
                 });
             }
         });
-        // Add advanced patterns based on complexity
+        // Add cutting-edge architectural patterns
         learningNeeds.advancedPatterns.forEach((pattern) => {
             if (pattern === 'code-architecture') {
                 queries.push({
-                    terms: 'software architecture patterns tutorial',
+                    terms: 'event-driven architecture domain modeling hexagonal architecture',
                     context: 'architecture',
                     difficulty: 'advanced'
                 });
             }
             else if (pattern === 'design-patterns') {
                 queries.push({
-                    terms: 'JavaScript design patterns tutorial',
+                    terms: 'functional programming monads category theory practical',
                     context: 'refactoring',
                     difficulty: 'advanced'
                 });
             }
         });
-        // Technology-specific advanced tutorials
-        Object.entries(learningNeeds.technologyDepth).forEach(([tech, level]) => {
-            if (level === 'advanced') {
-                queries.push({
-                    terms: `${tech} advanced techniques tutorial`,
-                    context: 'general',
-                    difficulty: 'advanced'
-                });
-            }
+        // Focus on business-differentiating skills
+        queries.push({
+            terms: 'web performance optimization core web vitals lighthouse',
+            context: 'general',
+            difficulty: 'intermediate'
+        });
+        queries.push({
+            terms: 'accessibility inclusive design WCAG implementation',
+            context: 'general',
+            difficulty: 'intermediate'
+        });
+        queries.push({
+            terms: 'security-first development threat modeling secure coding',
+            context: 'architecture',
+            difficulty: 'advanced'
+        });
+        queries.push({
+            terms: 'observability monitoring distributed tracing production debugging',
+            context: 'architecture',
+            difficulty: 'advanced'
+        });
+        queries.push({
+            terms: 'machine learning web development AI integration practical',
+            context: 'general',
+            difficulty: 'advanced'
         });
         return queries;
     }
@@ -203,70 +227,9 @@ class TutorAgent {
         return queries.slice(0, 8); // Limit to avoid rate limits
     }
     async searchTutorials(query) {
-        // Since we don't have YouTube API key, we'll create mock tutorials based on the search terms
-        // In a real implementation, you would use the YouTube Data API
-        return this.generateMockTutorials(query);
-    }
-    generateMockTutorials(query) {
-        const tutorials = [];
-        const baseId = this.generateId(query.terms);
-        // Generate 2-3 mock tutorials per query
-        const tutorialTemplates = [
-            {
-                titleTemplate: `Complete Guide to ${query.terms}`,
-                authorTemplate: 'Programming with Experts',
-                duration: '45:30',
-                views: 125000
-            },
-            {
-                titleTemplate: `${query.terms} - Best Practices`,
-                authorTemplate: 'Code Academy Pro',
-                duration: '28:15',
-                views: 87000
-            },
-            {
-                titleTemplate: `Master ${query.terms} in 2024`,
-                authorTemplate: 'TechMentor',
-                duration: '1:12:45',
-                views: 203000
-            }
-        ];
-        tutorialTemplates.slice(0, 2).forEach((template, index) => {
-            tutorials.push({
-                id: `${baseId}-${index}`,
-                title: template.titleTemplate,
-                description: `Learn ${query.terms} with practical examples and hands-on coding. This comprehensive tutorial covers all the essential concepts and best practices.`,
-                url: `https://youtube.com/watch?v=${this.generateYouTubeId()}`,
-                platform: 'youtube',
-                duration: template.duration,
-                views: template.views,
-                rating: 4.2 + Math.random() * 0.6,
-                publishedDate: this.generateRandomDate(),
-                author: template.authorTemplate,
-                difficulty: query.difficulty,
-                topics: this.extractTopics(query.terms),
-                relevanceScore: 0.7 + Math.random() * 0.3,
-                relatedTo: query.context
-            });
-        });
-        return tutorials;
-    }
-    generateId(terms) {
-        return terms.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    }
-    generateYouTubeId() {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-        let result = '';
-        for (let i = 0; i < 11; i++) {
-            result += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return result;
-    }
-    generateRandomDate() {
-        const start = new Date(2022, 0, 1);
-        const end = new Date();
-        const randomDate = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
-        return randomDate.toISOString();
+        // Return empty array - no mock tutorials
+        // Real implementation would use YouTube Data API
+        return [];
     }
     extractTopics(terms) {
         const topics = [];
@@ -309,46 +272,6 @@ class TutorAgent {
             byDifficulty,
             byPlatform,
             averageRelevance: tutorials.length > 0 ? Math.round((totalRelevance / tutorials.length) * 100) / 100 : 0
-        };
-    }
-    createFallbackTutorials(analysis) {
-        const tutorials = [
-            {
-                id: 'clean-code-basics',
-                title: 'Clean Code Fundamentals',
-                description: 'Learn the principles of writing clean, maintainable code with practical examples.',
-                url: 'https://youtube.com/watch?v=example1',
-                platform: 'youtube',
-                duration: '42:30',
-                views: 156000,
-                rating: 4.7,
-                publishedDate: '2023-06-15T10:00:00Z',
-                author: 'CleanCode Academy',
-                difficulty: 'intermediate',
-                topics: ['clean code', 'best practices', 'software quality'],
-                relevanceScore: 0.9,
-                relatedTo: 'general'
-            },
-            {
-                id: 'refactoring-techniques',
-                title: 'Refactoring Techniques Every Developer Should Know',
-                description: 'Master essential refactoring techniques to improve your codebase quality.',
-                url: 'https://youtube.com/watch?v=example2',
-                platform: 'youtube',
-                duration: '35:45',
-                views: 98000,
-                rating: 4.5,
-                publishedDate: '2023-08-22T14:30:00Z',
-                author: 'Code Refactor Pro',
-                difficulty: 'intermediate',
-                topics: ['refactoring', 'code improvement', 'maintainability'],
-                relevanceScore: 0.8,
-                relatedTo: 'refactoring'
-            }
-        ];
-        return {
-            tutorials,
-            summary: this.generateSummary(tutorials)
         };
     }
 }
