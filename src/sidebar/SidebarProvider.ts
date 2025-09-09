@@ -7,6 +7,7 @@ import { CodeEmbeddingService } from '../rag/embedding';
 import { MultiAgentOrchestrator, AgentResults } from '../agents/main';
 import { CodeFixService } from '../services/CodeFixService';
 import { FileEditService } from '../services/FileEditService';
+import { RAGImplementationService } from '../services/RAGImplementationService';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'strategic-code-companion.sidebar';
@@ -16,6 +17,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private isAnalyzing = false;
     private codeFixService?: CodeFixService;
     private fileEditService?: FileEditService;
+    private ragImplementationService?: RAGImplementationService;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -34,7 +36,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: []
+            localResourceRoots: [this._extensionUri]
         };
 
         // Set the proper HTML content
@@ -183,6 +185,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 // Initialize AI editing services
                 this.codeFixService = new CodeFixService(llmProvider, workspaceRoot);
                 this.fileEditService = new FileEditService(workspaceRoot);
+                this.ragImplementationService = new RAGImplementationService(llmProvider);
+                
+                // Set codebase context for RAG implementation service
+                this.ragImplementationService.setCodebaseContext(results.analysis, chunks);
+                
                 await this.fileEditService.loadBackupsFromDisk();
 
                 // Step 4: Display results
@@ -334,8 +341,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     private async handleFixRefactoring(suggestionId: string, suggestion: any) {
-        if (!this.codeFixService || !this.fileEditService) {
-            vscode.window.showErrorMessage('AI editing services not initialized. Please run analysis first.');
+        if (!this.ragImplementationService || !this.fileEditService) {
+            vscode.window.showErrorMessage('RAG implementation service not initialized. Please run analysis first.');
             return;
         }
 
@@ -345,33 +352,45 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 title: `Applying refactoring: ${suggestion.title}`,
                 cancellable: false
             }, async (progress) => {
-                progress.report({ message: 'Generating code fixes...' });
+                progress.report({ message: 'Analyzing code context and generating personalized refactoring solution...' });
                 
-                // Generate the code fixes
-                const fixes = await this.codeFixService!.generateRefactoringFix(suggestion);
+                // Generate RAG-based refactoring implementation
+                const refactoringPlan = await this.ragImplementationService!.generateRefactoringFix(suggestion);
                 
-                progress.report({ message: 'Previewing changes...' });
-                
-                // Show diff preview and get user confirmation
-                const shouldApply = await this.fileEditService!.previewChanges(fixes);
-                
-                if (!shouldApply) {
-                    vscode.window.showInformationMessage('Refactoring cancelled by user.');
+                if (!refactoringPlan.files || refactoringPlan.files.length === 0) {
+                    vscode.window.showWarningMessage('No refactoring changes generated.');
+                    return;
+                }
+
+                // Show refactoring plan to user
+                const shouldApply = await vscode.window.showInformationMessage(
+                    `🔧 Refactoring plan ready for "${suggestion.title}"\n\n📁 Files to modify: ${refactoringPlan.files.length}\n⏱️ Estimated time: ${refactoringPlan.estimatedTime}\n\nApply these refactoring changes?`,
+                    'Apply Refactoring',
+                    'Show Plan',
+                    'Cancel'
+                );
+
+                if (shouldApply === 'Show Plan') {
+                    this.showImplementationPlan(refactoringPlan);
+                    return;
+                }
+
+                if (shouldApply !== 'Apply Refactoring') {
                     return;
                 }
                 
-                progress.report({ message: 'Applying changes...' });
+                progress.report({ message: 'Applying refactoring changes...' });
                 
-                // Apply the fixes
-                const result = await this.fileEditService!.applyFixes(fixes, `Refactoring: ${suggestion.title}`);
+                // Apply the refactoring
+                const result = await this.applyImplementationPlan(refactoringPlan);
                 
                 if (result.success) {
                     vscode.window.showInformationMessage(
-                        `Successfully applied refactoring: ${suggestion.title}`
+                        `✅ Successfully applied refactoring: ${suggestion.title}\n\n🔄 ${refactoringPlan.files.length} files refactored\n📈 Code quality improvements applied!`
                     );
                 } else {
                     vscode.window.showWarningMessage(
-                        `Refactoring partially applied. ${result.failedFixes.length} changes failed.`
+                        `⚠️ Refactoring partially applied: ${suggestion.title}\n\n${result.errors.join('\n')}`
                     );
                 }
             });
@@ -382,8 +401,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     private async handleImplementFeature(featureId: string, feature: any) {
-        if (!this.codeFixService || !this.fileEditService) {
-            vscode.window.showErrorMessage('AI editing services not initialized. Please run analysis first.');
+        if (!this.ragImplementationService || !this.fileEditService) {
+            vscode.window.showErrorMessage('RAG implementation service not initialized. Please run analysis first.');
             return;
         }
 
@@ -393,38 +412,47 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 title: `Implementing feature: ${feature.title}`,
                 cancellable: false
             }, async (progress) => {
-                progress.report({ message: 'Generating feature implementation...' });
+                progress.report({ message: 'Analyzing codebase context and generating personalized implementation...' });
                 
-                // Generate the feature implementation
-                const fixes = await this.codeFixService!.generateFeatureImplementation(feature);
+                // Generate RAG-based feature implementation
+                const implementationPlan = await this.ragImplementationService!.generateFeatureImplementation(feature);
                 
-                if (fixes.length === 0) {
+                if (!implementationPlan.files || implementationPlan.files.length === 0) {
                     vscode.window.showWarningMessage('No code changes generated for this feature.');
                     return;
                 }
+
+                progress.report({ message: 'Creating implementation files...' });
                 
-                progress.report({ message: 'Previewing changes...' });
-                
-                // Show diff preview and get user confirmation
-                const shouldApply = await this.fileEditService!.previewChanges(fixes);
-                
-                if (!shouldApply) {
-                    vscode.window.showInformationMessage('Feature implementation cancelled by user.');
+                // Show implementation plan to user before applying
+                const shouldImplement = await vscode.window.showInformationMessage(
+                    `Implementation plan ready for "${implementationPlan.title}"\n\nFiles to modify: ${implementationPlan.files.length}\nEstimated time: ${implementationPlan.estimatedTime}\n\nWould you like to apply these changes?`,
+                    'Apply Changes',
+                    'Show Plan First',
+                    'Cancel'
+                );
+
+                if (shouldImplement === 'Show Plan First') {
+                    // Show detailed implementation plan
+                    this.showImplementationPlan(implementationPlan);
                     return;
                 }
-                
-                progress.report({ message: 'Implementing feature...' });
-                
-                // Apply the fixes
-                const result = await this.fileEditService!.applyFixes(fixes, `Implement feature: ${feature.title}`);
+
+                if (shouldImplement !== 'Apply Changes') {
+                    return;
+                }
+
+                // Apply the implementation
+                progress.report({ message: 'Applying implementation changes...' });
+                const result = await this.applyImplementationPlan(implementationPlan);
                 
                 if (result.success) {
                     vscode.window.showInformationMessage(
-                        `Successfully implemented feature: ${feature.title}. Created ${result.appliedFixes.length} files/changes.`
+                        `✅ Successfully implemented feature: ${implementationPlan.title}\n\n📁 Files modified: ${implementationPlan.files.length}\n⏱️ Estimated completion: ${implementationPlan.estimatedTime}\n\n🧪 Next steps:\n${implementationPlan.testingStrategy.slice(0, 2).join('\n')}`
                     );
                 } else {
                     vscode.window.showWarningMessage(
-                        `Feature partially implemented. ${result.failedFixes.length} changes failed.`
+                        `⚠️ Feature partially implemented: ${implementationPlan.title}\n\n${result.errors.join('\n')}`
                     );
                 }
             });
@@ -432,6 +460,107 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             console.error('Failed to implement feature:', error);
             vscode.window.showErrorMessage(`Failed to implement feature: ${error}`);
         }
+    }
+
+    private async showImplementationPlan(plan: any) {
+        const planDetails = `
+# Implementation Plan: ${plan.title}
+
+## Description
+${plan.description}
+
+## Files to Modify (${plan.files.length})
+${plan.files.map((file: any) => 
+    `- ${file.action.toUpperCase()}: ${file.filePath} (${file.codeChanges.length} changes)`
+).join('\n')}
+
+## Dependencies
+${plan.dependencies.length > 0 ? plan.dependencies.map((dep: string) => `- ${dep}`).join('\n') : 'None'}
+
+## Implementation Steps
+${plan.implementationSteps.map((step: string, index: number) => `${index + 1}. ${step}`).join('\n')}
+
+## Testing Strategy
+${plan.testingStrategy.map((test: string) => `- ${test}`).join('\n')}
+
+## Estimated Time
+${plan.estimatedTime}
+        `;
+
+        const document = await vscode.workspace.openTextDocument({
+            content: planDetails,
+            language: 'markdown'
+        });
+        
+        await vscode.window.showTextDocument(document);
+    }
+
+    private async applyImplementationPlan(plan: any): Promise<{ success: boolean, errors: string[] }> {
+        const errors: string[] = [];
+        
+        for (const file of plan.files) {
+            try {
+                const filePath = vscode.Uri.file(
+                    path.join(vscode.workspace.workspaceFolders![0].uri.fsPath, file.filePath)
+                );
+
+                if (file.action === 'create') {
+                    // Create new file
+                    const content = file.codeChanges
+                        .map((change: any) => change.newCode)
+                        .join('\n');
+                    
+                    await vscode.workspace.fs.writeFile(filePath, Buffer.from(content, 'utf8'));
+                    
+                } else if (file.action === 'modify') {
+                    // Modify existing file
+                    try {
+                        let existingContent = '';
+                        try {
+                            const existingBuffer = await vscode.workspace.fs.readFile(filePath);
+                            existingContent = Buffer.from(existingBuffer).toString('utf8');
+                        } catch (readError) {
+                            // File doesn't exist, create it
+                            existingContent = '';
+                        }
+
+                        let modifiedContent = existingContent;
+                        
+                        // Apply code changes
+                        for (const change of file.codeChanges) {
+                            if (change.type === 'insert') {
+                                if (change.lineNumber) {
+                                    const lines = modifiedContent.split('\n');
+                                    lines.splice(change.lineNumber - 1, 0, change.newCode);
+                                    modifiedContent = lines.join('\n');
+                                } else {
+                                    modifiedContent += '\n' + change.newCode;
+                                }
+                            } else if (change.type === 'replace' && change.oldCode) {
+                                modifiedContent = modifiedContent.replace(change.oldCode, change.newCode);
+                            }
+                        }
+
+                        await vscode.workspace.fs.writeFile(filePath, Buffer.from(modifiedContent, 'utf8'));
+                        
+                    } catch (modifyError) {
+                        errors.push(`Failed to modify ${file.filePath}: ${modifyError}`);
+                    }
+                }
+                
+                // Open the modified file
+                const document = await vscode.workspace.openTextDocument(filePath);
+                await vscode.window.showTextDocument(document);
+                
+            } catch (error) {
+                errors.push(`Failed to process ${file.filePath}: ${error}`);
+            }
+        }
+        
+        return {
+            success: errors.length === 0,
+            errors
+        };
     }
 
     private async handleImplementRecommendation(recommendationId: string, recommendation: any) {
@@ -579,7 +708,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}'; connect-src https:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Strategic Code Companion</title>
     <style>
@@ -1529,6 +1658,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             align-items: center;
             justify-content: center;
             font-size: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .video-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        
+        .video-thumbnail .play-icon {
+            position: absolute;
+            color: white;
+            text-shadow: 0 0 4px rgba(0,0,0,0.8);
+            font-size: 18px;
         }
     </style>
 </head>
@@ -2050,7 +2195,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         </div>
                         
                         <div class="video-preview" onclick="openUrl('\${tutorial.url}')">
-                            <div class="video-thumbnail">▶️</div>
+                            <div class="video-thumbnail">
+                                \${tutorial.thumbnailUrl ? 
+                                    \`<img src="\${tutorial.thumbnailUrl}" alt="\${tutorial.title}" onerror="this.parentElement.innerHTML='▶️'"/><div class="play-icon">▶</div>\` : 
+                                    '▶️'
+                                }
+                            </div>
                             <div>
                                 <div><strong>\${tutorial.author}</strong></div>
                                 <div>\${tutorial.duration} • \${tutorial.platform}</div>
