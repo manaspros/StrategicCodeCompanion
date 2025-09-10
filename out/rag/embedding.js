@@ -31,24 +31,9 @@ class CodeEmbeddingService {
             try {
                 // Prepare text for embedding - combine code with metadata
                 const textToEmbed = this.prepareTextForEmbedding(chunk);
-                // Try Nomic Embed first, fallback to simple embedding
-                let vector;
-                try {
-                    vector = await this.getNomicEmbedding(textToEmbed);
-                }
-                catch (error) {
-                    console.warn('Nomic Embed failed, using fallback:', error);
-                    vector = this.getFallbackEmbedding(textToEmbed);
-                }
-                embeddings.push({
-                    vector,
-                    metadata: {
-                        chunkId: chunk.id,
-                        filePath: chunk.filePath,
-                        type: chunk.type,
-                        language: chunk.language
-                    }
-                });
+                // Handle large chunks by breaking them into sub-chunks
+                const subEmbeddings = await this.processLargeChunk(chunk, textToEmbed);
+                embeddings.push(...subEmbeddings);
                 // Store chunk for later retrieval
                 this.chunks.set(chunk.id, chunk);
             }
@@ -74,13 +59,107 @@ class CodeEmbeddingService {
         if (metadata.length > 0) {
             text = `${metadata.join('\n')}\n\n${text}`;
         }
+        // Limit text length to avoid Nomic API token limit (8192 tokens ≈ 3000 chars for safety)
+        const maxLength = 3000;
+        if (text.length > maxLength) {
+            console.log(`Truncating chunk from ${text.length} to ${maxLength} chars for Nomic API`);
+            text = text.substring(0, maxLength) + '\n... [truncated for embedding]';
+        }
         return text;
     }
+    async processLargeChunk(chunk, textToEmbed) {
+        const maxLength = 3000;
+        const embeddings = [];
+        if (textToEmbed.length <= maxLength) {
+            // Small chunk - single embedding
+            const vector = await this.getNomicEmbedding(textToEmbed);
+            embeddings.push({
+                vector,
+                metadata: {
+                    chunkId: chunk.id,
+                    filePath: chunk.filePath,
+                    type: chunk.type,
+                    language: chunk.language,
+                    subChunkIndex: 0,
+                    totalSubChunks: 1
+                }
+            });
+        }
+        else {
+            // Large chunk - break into multiple embeddings to preserve ALL data
+            const metadata = [
+                `Name: ${chunk.name}`,
+                `Type: ${chunk.type}`,
+                `Language: ${chunk.language}`,
+                `File: ${chunk.filePath}`
+            ].join('\n') + '\n\n';
+            const contentOnly = chunk.content;
+            const availableSpace = maxLength - metadata.length - 50; // Reserve space for metadata + part info
+            // Calculate number of sub-chunks needed
+            const totalSubChunks = Math.ceil(contentOnly.length / availableSpace);
+            console.log(`Breaking large chunk ${chunk.name} into ${totalSubChunks} sub-embeddings (preserving ALL ${contentOnly.length} chars)`);
+            // Create embedding for each sub-chunk
+            for (let i = 0; i < totalSubChunks; i++) {
+                const start = i * availableSpace;
+                const end = Math.min(start + availableSpace, contentOnly.length);
+                const subContent = contentOnly.substring(start, end);
+                // Add continuation markers
+                let finalContent = subContent;
+                if (i > 0)
+                    finalContent = '... ' + finalContent;
+                if (i < totalSubChunks - 1)
+                    finalContent = finalContent + ' ...';
+                const subChunkText = `${metadata}Part: ${i + 1} of ${totalSubChunks}\n\n${finalContent}`;
+                const vector = await this.getNomicEmbedding(subChunkText);
+                embeddings.push({
+                    vector,
+                    metadata: {
+                        chunkId: `${chunk.id}_part_${i}`,
+                        originalChunkId: chunk.id,
+                        filePath: chunk.filePath,
+                        type: chunk.type,
+                        language: chunk.language,
+                        subChunkIndex: i,
+                        totalSubChunks: totalSubChunks
+                    }
+                });
+            }
+        }
+        return embeddings;
+    }
     async getNomicEmbedding(text) {
-        // Note: This is a placeholder implementation
-        // In a real implementation, you would need to use the Nomic API
-        // For now, we'll use the fallback method
-        throw new Error('Nomic API not implemented - using fallback');
+        const nomicApiKey = process.env.NOMIC_API_KEY || 'nk-FopoMYmt6vR21Tq6wBsajndbcwA7kbelpfq5pTiPIXg';
+        if (!nomicApiKey) {
+            throw new Error('Nomic API key not configured');
+        }
+        try {
+            const response = await fetch('https://api-atlas.nomic.ai/v1/embedding/text', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${nomicApiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'nomic-embed-text-v1.5',
+                    texts: [text],
+                    task_type: 'search_document',
+                    dimensionality: CodeEmbeddingService.EMBEDDING_DIMENSION
+                })
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Nomic API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+            const data = await response.json();
+            if (!data.embeddings || !data.embeddings[0]) {
+                throw new Error('Invalid response from Nomic API: missing embeddings');
+            }
+            return data.embeddings[0];
+        }
+        catch (error) {
+            console.error('Nomic API request failed:', error);
+            throw error;
+        }
     }
     getFallbackEmbedding(text) {
         // Simple hash-based embedding as fallback
@@ -120,14 +199,8 @@ class CodeEmbeddingService {
      */
     async searchSimilar(queryText, topK = 5) {
         try {
-            // Generate embedding for query
-            let queryVector;
-            try {
-                queryVector = await this.getNomicEmbedding(queryText);
-            }
-            catch {
-                queryVector = this.getFallbackEmbedding(queryText);
-            }
+            // Generate embedding for query using Nomic
+            const queryVector = await this.getNomicEmbedding(queryText);
             // Calculate similarities with all stored embeddings
             const similarities = [];
             for (const [chunkId, embedding] of this.embeddings) {

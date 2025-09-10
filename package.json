@@ -30,6 +30,11 @@
           "id": "strategic-code-companion.sidebar",
           "name": "Strategic Code Companion",
           "type": "webview"
+        },
+        {
+          "id": "strategic-code-companion.github",
+          "name": "GitHub Integration",
+          "when": "config.strategic-code-companion.enableGitHubIntegration"
         }
       ]
     },
@@ -48,17 +53,134 @@
         "command": "strategic-code-companion.openView",
         "title": "Open Strategic Code Companion",
         "category": "Strategic Code Companion"
+      },
+      {
+        "command": "strategic-code-companion.analyzeGitHubRepo",
+        "title": "Analyze GitHub Repository",
+        "category": "Strategic Code Companion",
+        "icon": "$(github)"
+      },
+      {
+        "command": "strategic-code-companion.viewGitHubAnalysis",
+        "title": "View GitHub Analysis",
+        "category": "Strategic Code Companion"
+      },
+      {
+        "command": "strategic-code-companion.searchGitHubRepos",
+        "title": "Search GitHub Repositories",
+        "category": "Strategic Code Companion",
+        "icon": "$(search)"
+      },
+      {
+        "command": "strategic-code-companion.configureGitHubToken",
+        "title": "Configure GitHub Token",
+        "category": "Strategic Code Companion",
+        "icon": "$(key)"
+      },
+      {
+        "command": "strategic-code-companion.deleteGitHubSession",
+        "title": "Delete Analysis Session",
+        "category": "Strategic Code Companion",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "strategic-code-companion.showDependencyGraph",
+        "title": "Show Dependency Graph",
+        "category": "Strategic Code Companion",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "strategic-code-companion.exportReport",
+        "title": "Export Analysis Report",
+        "category": "Strategic Code Companion",
+        "icon": "$(export)"
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "strategic-code-companion.analyzeWorkspace",
+          "when": "workspaceFolderCount > 0"
+        },
+        {
+          "command": "strategic-code-companion.showDependencyGraph",
+          "when": "workspaceFolderCount > 0"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "strategic-code-companion.deleteGitHubSession",
+          "when": "view == strategic-code-companion.github && viewItem == session",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Strategic Code Companion",
+      "properties": {
+        "strategic-code-companion.enableGitHubIntegration": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable GitHub repository analysis features"
+        },
+        "strategic-code-companion.enableRealTimeAnalysis": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable real-time code analysis as you type (experimental)"
+        },
+        "strategic-code-companion.enableEnhancedVisualizations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable advanced visualizations like dependency graphs"
+        },
+        "strategic-code-companion.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub Personal Access Token for repository analysis"
+        },
+        "strategic-code-companion.analysisDepth": {
+          "type": "string",
+          "enum": [
+            "basic",
+            "standard",
+            "comprehensive"
+          ],
+          "default": "standard",
+          "description": "Depth of code analysis to perform"
+        },
+        "strategic-code-companion.autoExportReports": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically export reports after analysis"
+        },
+        "strategic-code-companion.defaultReportFormat": {
+          "type": "string",
+          "enum": [
+            "html",
+            "markdown",
+            "pdf",
+            "json"
+          ],
+          "default": "html",
+          "description": "Default format for exported reports"
+        }
+      }
+    }
+  },
+  "bin": {
+    "strategic-code-companion": "./out/cli/index.js"
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "build:cli": "npm run compile && chmod +x ./out/cli/index.js",
+    "test:cli": "npm run build:cli && ./out/cli/index.js --help"
   },
   "devDependencies": {
     "@types/babel__traverse": "^7.28.0",
     "@types/node": "18.x",
+    "@types/puppeteer": "^7.0.4",
     "@types/vscode": "^1.74.0",
     "@typescript-eslint/eslint-plugin": "^5.45.0",
     "@typescript-eslint/parser": "^5.45.0",
@@ -70,14 +192,22 @@
     "@babel/parser": "^7.24.8",
     "@babel/traverse": "^7.24.8",
     "@babel/types": "^7.24.8",
+    "@composio/core": "^0.1.50",
     "@google/generative-ai": "^0.17.1",
     "@langchain/anthropic": "^0.3.0",
     "@langchain/core": "^0.3.0",
     "@langchain/google-genai": "^0.1.0",
     "@langchain/openai": "^0.3.0",
+    "@octokit/rest": "^20.1.2",
+    "@openai/agents": "^0.0.15",
+    "@types/html-pdf": "^3.0.3",
     "axios": "^1.7.2",
+    "commander": "^11.1.0",
+    "html-pdf": "^3.0.1",
     "ignore": "^5.3.1",
     "langchain": "^0.3.0",
-    "openai": "^4.52.7"
+    "openai": "^4.52.7",
+    "puppeteer": "^21.11.0",
+    "zod": "^3.25.67"
   }
 }

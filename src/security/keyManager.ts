@@ -10,6 +10,7 @@ export interface APIKeyConfig {
 export class KeyManager {
     private static readonly API_KEY_SECRET = 'strategic-code-companion.apiKey';
     private static readonly PROVIDER_KEY = 'strategic-code-companion.provider';
+    private static readonly COMPOSIO_KEY_SECRET = 'strategic-code-companion.composioKey';
 
     constructor(private context: vscode.ExtensionContext) {}
 
@@ -131,5 +132,44 @@ export class KeyManager {
         }
 
         return config;
+    }
+
+    /**
+     * Stores Composio API key securely
+     */
+    async storeComposioKey(composioKey: string): Promise<void> {
+        try {
+            await this.context.secrets.store(KeyManager.COMPOSIO_KEY_SECRET, composioKey);
+            console.log('Composio API key stored securely');
+        } catch (error) {
+            console.error('Failed to store Composio API key:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Retrieves the stored Composio API key
+     */
+    async getComposioKey(): Promise<string | null> {
+        try {
+            const composioKey = await this.context.secrets.get(KeyManager.COMPOSIO_KEY_SECRET);
+            return composioKey || null;
+        } catch (error) {
+            console.error('Failed to retrieve Composio API key:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Clears the stored Composio API key
+     */
+    async clearComposioKey(): Promise<void> {
+        try {
+            await this.context.secrets.delete(KeyManager.COMPOSIO_KEY_SECRET);
+            console.log('Composio API key cleared successfully');
+        } catch (error) {
+            console.error('Failed to clear Composio API key:', error);
+            throw error;
+        }
     }
 }

@@ -7,6 +7,10 @@ import { RefactorAgent } from './RefactorAgent';
 import { ArchitectAgent } from './ArchitectAgent';
 import { LibrarianAgent } from './LibrarianAgent';
 import { TutorAgent } from './TutorAgent';
+import { OpenAIAgentOrchestrator, EnhancedAgentResults, UniqueRecommendation, BusinessStrategy } from '../services/OpenAIAgentOrchestrator';
+
+// Export enhanced types for external use
+export { EnhancedAgentResults, UniqueRecommendation, BusinessStrategy };
 
 export interface CodebaseAnalysis {
     overall_summary: string;
@@ -29,6 +33,7 @@ export interface AgentResults {
     architecture: any;
     libraries: any;
     tutorials: any;
+    enhanced?: EnhancedAgentResults; // New enhanced results from advanced agents
 }
 
 export class MultiAgentOrchestrator {
@@ -37,13 +42,21 @@ export class MultiAgentOrchestrator {
     private architectAgent: ArchitectAgent;
     private librarianAgent: LibrarianAgent;
     private tutorAgent: TutorAgent;
+    private enhancedOrchestrator: OpenAIAgentOrchestrator;
+    private useEnhancedAgents: boolean = true;
 
-    constructor(llmProvider: LLMProvider) {
+    constructor(llmProvider: LLMProvider, composioApiKey?: string) {
         this.llmProvider = llmProvider;
         this.refactorAgent = new RefactorAgent(llmProvider);
         this.architectAgent = new ArchitectAgent(llmProvider);
-        this.librarianAgent = new LibrarianAgent();
-        this.tutorAgent = new TutorAgent();
+        this.librarianAgent = new LibrarianAgent(llmProvider);
+        this.tutorAgent = new TutorAgent(llmProvider);
+        this.enhancedOrchestrator = new OpenAIAgentOrchestrator(llmProvider);
+        
+        // Initialize enhanced orchestrator with Composio API key
+        if (composioApiKey) {
+            this.enhancedOrchestrator.initialize(composioApiKey);
+        }
     }
 
     async analyzeCodebase(chunks: CodeChunk[]): Promise<AgentResults> {
@@ -61,12 +74,36 @@ export class MultiAgentOrchestrator {
                 this.tutorAgent.findTutorials(analysis, chunks)
             ]);
 
+            // Step 3: Run enhanced agent analysis for unique value propositions
+            let enhanced: EnhancedAgentResults | undefined;
+            if (this.useEnhancedAgents) {
+                try {
+                    console.log('Running enhanced agent analysis...');
+                    enhanced = await this.enhancedOrchestrator.analyzeWithEnhancedAgents(analysis, chunks);
+                    console.log('Enhanced analysis completed successfully');
+                    
+                    // If enhanced analysis succeeded, prioritize showing it
+                    if (enhanced && enhanced.uniqueRecommendations.length > 0) {
+                        console.log('Enhanced analysis has', enhanced.uniqueRecommendations.length, 'unique recommendations');
+                    }
+                } catch (error) {
+                    console.warn('Enhanced agent analysis failed, continuing without it:', error);
+                    enhanced = undefined;
+                    // If enhanced agents fail due to API issues, disable them for this session
+                    if (error instanceof Error && (error.message.includes('API') || error.message.includes('overloaded'))) {
+                        console.log('Disabling enhanced agents due to API issues');
+                        this.useEnhancedAgents = false;
+                    }
+                }
+            }
+
             return {
                 analysis,
                 refactoring,
                 architecture,
                 libraries,
-                tutorials
+                tutorials,
+                enhanced
             };
         } catch (error) {
             console.error('Analysis failed:', error);
@@ -74,20 +111,34 @@ export class MultiAgentOrchestrator {
         }
     }
 
+    /**
+     * Configure enhanced agent settings
+     */
+    setEnhancedAgents(enabled: boolean): void {
+        this.useEnhancedAgents = enabled;
+    }
+
+    /**
+     * Initialize enhanced agents with API keys
+     */
+    async initializeEnhancedAgents(composioApiKey: string): Promise<void> {
+        await this.enhancedOrchestrator.initialize(composioApiKey);
+    }
+
     private async performInitialAnalysis(chunks: CodeChunk[]): Promise<CodebaseAnalysis> {
         // Prepare codebase summary for analysis
         const codebaseSummary = this.createCodebaseSummary(chunks);
         
         const systemPrompt = `You are an expert software architect and code analyst. 
-        Analyze the provided codebase and return a comprehensive analysis in the exact JSON format specified.
+        Analyze the provided codebase and return ONLY a valid JSON object with the exact structure specified.
+        
+        CRITICAL: Your response must be ONLY the JSON object, no other text, explanations, or markdown formatting.
         
         Focus on:
         1. Overall architecture and design patterns
         2. Technologies and frameworks used
         3. Code quality and potential improvements
-        4. Project complexity and maintainability
-        
-        Be thorough but concise in your analysis.`;
+        4. Project complexity and maintainability`;
 
         const userPrompt = `Analyze this codebase and provide insights:
 
@@ -118,18 +169,40 @@ Return your analysis as a JSON object with the following structure:
                 maxTokens: 2048
             });
 
-            // Parse JSON response
-            const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('No JSON found in response');
+            // Parse JSON response with better error handling
+            console.log('Raw LLM response:', response.content.substring(0, 500) + '...');
+            
+            // Try multiple JSON extraction strategies
+            let jsonString = '';
+            
+            // Strategy 1: Look for JSON block markers
+            const codeBlockMatch = response.content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+            if (codeBlockMatch) {
+                jsonString = codeBlockMatch[1];
+            } else {
+                // Strategy 2: Find complete JSON object with proper bracket matching
+                const extractedJSON = this.extractCompleteJSON(response.content);
+                if (!extractedJSON) {
+                    console.error('Full LLM response:', response.content);
+                    throw new Error(`No JSON found in LLM response. Response length: ${response.content.length} chars`);
+                }
+                jsonString = extractedJSON;
             }
 
-            const analysis = JSON.parse(jsonMatch[0]) as CodebaseAnalysis;
-            return analysis;
+            console.log('Extracted JSON:', jsonString.substring(0, 200) + '...');
+            
+            try {
+                const analysis = JSON.parse(jsonString) as CodebaseAnalysis;
+                console.log('Successfully parsed codebase analysis');
+                return analysis;
+            } catch (parseError) {
+                console.error('JSON parsing failed:', parseError);
+                console.error('Failed JSON string:', jsonString);
+                throw new Error(`Failed to parse LLM JSON response: ${parseError}`);
+            }
         } catch (error) {
             console.error('Failed to parse analysis response:', error);
-            // Return fallback analysis
-            return this.createFallbackAnalysis(chunks);
+            throw new Error(`Failed to analyze codebase: ${error}`);
         }
     }
 
@@ -189,23 +262,47 @@ ${chunk.content.substring(0, 300)}${chunk.content.length > 300 ? '...' : ''}`);
         return summary.join('\n');
     }
 
-    private createFallbackAnalysis(chunks: CodeChunk[]): CodebaseAnalysis {
-        const languages = Array.from(new Set(chunks.map(chunk => chunk.language)));
-        const fileCount = new Set(chunks.map(chunk => chunk.filePath)).size;
+    private extractCompleteJSON(text: string): string | null {
+        // Find the first opening brace
+        const startIndex = text.indexOf('{');
+        if (startIndex === -1) return null;
+
+        let braceCount = 0;
+        let inString = false;
+        let escapeNext = false;
         
-        return {
-            overall_summary: `A ${languages.join(', ')} project with ${fileCount} files and ${chunks.length} code chunks`,
-            key_technologies: languages,
-            architectural_patterns: ['Unknown'],
-            main_dependencies: ['Unknown'],
-            potential_areas_for_refactoring: ['Code analysis needed'],
-            project_type: 'other',
-            complexity_score: 5,
-            code_quality_metrics: {
-                maintainability: 5,
-                readability: 5,
-                testability: 5
+        for (let i = startIndex; i < text.length; i++) {
+            const char = text[i];
+            
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
             }
-        };
+            
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+            
+            if (!inString) {
+                if (char === '{') {
+                    braceCount++;
+                } else if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        // Found complete JSON object
+                        return text.substring(startIndex, i + 1);
+                    }
+                }
+            }
+        }
+        
+        return null; // No complete JSON found
     }
+
 }

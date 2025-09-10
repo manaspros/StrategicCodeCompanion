@@ -2,12 +2,16 @@ import axios from 'axios';
 import { CodebaseAnalysis, CodeChunk } from './main';
 import { RefactoringResults } from './RefactorAgent';
 import { ArchitectureResults } from './ArchitectAgent';
+import { LLMProvider } from '../llm/llmProvider';
+import { DynamicAnalysisEngine } from '../engines/DynamicAnalysisEngine';
+import { YouTubeSearchService } from '../services/YouTubeSearchService';
 
 export interface TutorialRecommendation {
     id: string;
     title: string;
     description: string;
     url: string;
+    thumbnailUrl?: string;
     platform: 'youtube' | 'other';
     duration?: string;
     views?: number;
@@ -32,346 +36,143 @@ export interface TutorialResults {
 
 export class TutorAgent {
     private static readonly YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
+    private llmProvider?: LLMProvider;
+    private dynamicAnalysisEngine?: DynamicAnalysisEngine;
     
-    constructor() {}
+    constructor(llmProvider?: LLMProvider) {
+        this.llmProvider = llmProvider;
+        this.dynamicAnalysisEngine = llmProvider ? new DynamicAnalysisEngine(llmProvider) : undefined;
+    }
 
     async findTutorials(analysis: CodebaseAnalysis, codeChunks: CodeChunk[], refactoring?: RefactoringResults, architecture?: ArchitectureResults): Promise<TutorialResults> {
         try {
-            // Analyze what the user actually needs to learn based on their code
-            const learningNeeds = this.analyzeLearningNeeds(codeChunks, analysis);
-            const searchQueries = this.generateContextualSearchQueries(analysis, learningNeeds, refactoring, architecture);
-            const tutorials: TutorialRecommendation[] = [];
-
-            console.log('TutorAgent: Learning needs identified:', learningNeeds);
-            console.log('TutorAgent: Generated search queries:', searchQueries);
-
-            // Search for tutorials for each query
-            for (const query of searchQueries) {
-                try {
-                    const queryTutorials = await this.searchTutorials(query);
-                    tutorials.push(...queryTutorials);
-                } catch (error) {
-                    console.warn(`Failed to search tutorials for "${query.terms}":`, error);
-                }
+            if (!this.dynamicAnalysisEngine) {
+                console.warn('TutorAgent: No dynamic analysis engine available');
+                return this.getFallbackTutorialResults(analysis, codeChunks);
             }
 
-            // Remove duplicates and sort by relevance
-            const uniqueTutorials = this.deduplicateAndRank(tutorials);
-            const topTutorials = uniqueTutorials.slice(0, 10);
+            // Step 1: Perform dynamic analysis of the codebase and skill gaps
+            console.log('TutorAgent: Performing dynamic codebase analysis...');
+            const dynamicAnalysis = await this.dynamicAnalysisEngine.analyzeCodebaseDynamically(analysis, codeChunks, refactoring, architecture);
+            
+            // Step 2: Generate intelligent learning path strategy based on analysis
+            console.log('TutorAgent: Generating intelligent learning path strategy...');
+            const learningStrategy = await this.dynamicAnalysisEngine.generateLearningPathStrategy(analysis, codeChunks, dynamicAnalysis);
+            
+            // Step 3: Create tutorial recommendations based on learning strategy
+            const intelligentTutorials = this.createTutorialsFromStrategy(learningStrategy, dynamicAnalysis, analysis);
+            
+            console.log(`TutorAgent: Generated ${intelligentTutorials.length} intelligent tutorial recommendations`);
 
             return {
-                tutorials: topTutorials,
-                summary: this.generateSummary(topTutorials)
+                tutorials: intelligentTutorials,
+                summary: this.generateSummary(intelligentTutorials)
             };
         } catch (error) {
             console.error('Failed to find tutorials:', error);
-            return this.createFallbackTutorials(analysis);
+            return this.getFallbackTutorialResults(analysis, codeChunks);
         }
     }
 
-    private analyzeLearningNeeds(codeChunks: CodeChunk[], analysis: CodebaseAnalysis): any {
-        const needs = {
-            advancedPatterns: [] as string[],
-            missingSkills: [] as string[],
-            optimizationAreas: [] as string[],
-            technologyDepth: {} as any
-        };
-
-        // Analyze code complexity and patterns
-        const complexityLevel = analysis.complexity_score;
-        
-        if (complexityLevel > 7) {
-            needs.advancedPatterns.push('code-architecture');
-            needs.advancedPatterns.push('design-patterns');
-        }
-        
-        // Analyze technology usage depth
-        analysis.key_technologies.forEach(tech => {
-            const techUsage = codeChunks.filter(chunk => 
-                chunk.content.toLowerCase().includes(tech.toLowerCase())
-            ).length;
-            
-            if (techUsage > 5) {
-                needs.technologyDepth[tech] = 'advanced';
-            } else {
-                needs.technologyDepth[tech] = 'intermediate';
-                needs.missingSkills.push(`advanced-${tech.toLowerCase()}`);
-            }
-        });
-
-        // Check for missing modern practices
-        const hasModernJS = codeChunks.some(chunk => 
-            chunk.content.includes('async') || chunk.content.includes('await')
-        );
-        if (!hasModernJS) {
-            needs.missingSkills.push('modern-javascript');
-        }
-
-        const hasTypeScript = analysis.key_technologies.includes('TypeScript');
-        if (!hasTypeScript && analysis.key_technologies.includes('JavaScript')) {
-            needs.missingSkills.push('typescript');
-        }
-
-        return needs;
-    }
-
-    private generateContextualSearchQueries(
-        analysis: CodebaseAnalysis, 
-        learningNeeds: any, 
-        refactoring?: RefactoringResults, 
-        architecture?: ArchitectureResults
-    ): Array<{terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}> {
-        const queries: Array<{terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}> = [];
-        
-        // Add queries based on identified learning needs
-        learningNeeds.missingSkills.forEach((skill: string) => {
-            if (skill.includes('typescript')) {
-                queries.push({
-                    terms: 'TypeScript migration tutorial advanced',
-                    context: 'general',
-                    difficulty: 'advanced'
-                });
-            } else if (skill.includes('modern-javascript')) {
-                queries.push({
-                    terms: 'modern JavaScript ES6+ tutorial',
-                    context: 'general',
-                    difficulty: 'intermediate'
-                });
-            } else if (skill.includes('advanced-react')) {
-                queries.push({
-                    terms: 'React advanced patterns hooks tutorial',
-                    context: 'general',
-                    difficulty: 'advanced'
-                });
-            }
-        });
-
-        // Add advanced patterns based on complexity
-        learningNeeds.advancedPatterns.forEach((pattern: string) => {
-            if (pattern === 'code-architecture') {
-                queries.push({
-                    terms: 'software architecture patterns tutorial',
-                    context: 'architecture',
-                    difficulty: 'advanced'
-                });
-            } else if (pattern === 'design-patterns') {
-                queries.push({
-                    terms: 'JavaScript design patterns tutorial',
-                    context: 'refactoring',
-                    difficulty: 'advanced'
-                });
-            }
-        });
-
-        // Technology-specific advanced tutorials
-        Object.entries(learningNeeds.technologyDepth).forEach(([tech, level]: [string, any]) => {
-            if (level === 'advanced') {
-                queries.push({
-                    terms: `${tech} advanced techniques tutorial`,
-                    context: 'general',
-                    difficulty: 'advanced'
-                });
-            }
-        });
-
-        return queries;
-    }
-
-    private generateSearchQueries(analysis: CodebaseAnalysis, refactoring?: RefactoringResults, architecture?: ArchitectureResults): Array<{terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}> {
-        const queries: Array<{terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}> = [];
-        
-        // Technology-specific tutorials
-        analysis.key_technologies.forEach(tech => {
-            queries.push({
-                terms: `${tech} tutorial best practices`,
-                context: 'general',
-                difficulty: 'intermediate'
-            });
-        });
-
-        // Project-type specific tutorials
-        switch (analysis.project_type) {
-            case 'web-app':
-                queries.push({
-                    terms: 'web application development tutorial',
-                    context: 'general',
-                    difficulty: 'intermediate'
-                });
-                break;
-            case 'api':
-                queries.push({
-                    terms: 'REST API development best practices',
-                    context: 'architecture',
-                    difficulty: 'intermediate'
-                });
-                break;
-            case 'cli-tool':
-                queries.push({
-                    terms: 'command line tool development',
-                    context: 'general',
-                    difficulty: 'intermediate'
-                });
-                break;
-        }
-
-        // Refactoring-specific tutorials
-        if (refactoring) {
-            const categories = refactoring.summary.categories;
-            categories.forEach(category => {
-                queries.push({
-                    terms: `code refactoring ${category} tutorial`,
-                    context: 'refactoring',
-                    difficulty: 'intermediate'
-                });
-            });
-
-            queries.push({
-                terms: 'clean code refactoring techniques',
-                context: 'refactoring',
-                difficulty: 'intermediate'
-            });
-        }
-
-        // Architecture-specific tutorials
-        if (architecture) {
-            const categories = Object.keys(architecture.summary.byCategory);
-            categories.forEach(category => {
-                queries.push({
-                    terms: `software architecture ${category} tutorial`,
-                    context: 'architecture',
-                    difficulty: 'advanced'
-                });
-            });
-        }
-
-        // Quality improvement tutorials
-        if (analysis.code_quality_metrics.maintainability < 7) {
-            queries.push({
-                terms: 'code maintainability best practices',
-                context: 'refactoring',
-                difficulty: 'intermediate'
-            });
-        }
-
-        if (analysis.code_quality_metrics.testability < 7) {
-            queries.push({
-                terms: 'software testing tutorial best practices',
-                context: 'general',
-                difficulty: 'intermediate'
-            });
-        }
-
-        return queries.slice(0, 8); // Limit to avoid rate limits
-    }
-
-    private async searchTutorials(query: {terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}): Promise<TutorialRecommendation[]> {
-        // Since we don't have YouTube API key, we'll create mock tutorials based on the search terms
-        // In a real implementation, you would use the YouTube Data API
-        return this.generateMockTutorials(query);
-    }
-
-    private generateMockTutorials(query: {terms: string, context: 'refactoring' | 'architecture' | 'general', difficulty: 'beginner' | 'intermediate' | 'advanced'}): TutorialRecommendation[] {
+    private createTutorialsFromStrategy(
+        learningStrategy: any,
+        dynamicAnalysis: any, 
+        analysis: CodebaseAnalysis
+    ): TutorialRecommendation[] {
         const tutorials: TutorialRecommendation[] = [];
-        const baseId = this.generateId(query.terms);
-        
-        // Generate 2-3 mock tutorials per query
-        const tutorialTemplates = [
-            {
-                titleTemplate: `Complete Guide to ${query.terms}`,
-                authorTemplate: 'Programming with Experts',
-                duration: '45:30',
-                views: 125000
-            },
-            {
-                titleTemplate: `${query.terms} - Best Practices`,
-                authorTemplate: 'Code Academy Pro',
-                duration: '28:15',
-                views: 87000
-            },
-            {
-                titleTemplate: `Master ${query.terms} in 2024`,
-                authorTemplate: 'TechMentor',
-                duration: '1:12:45',
-                views: 203000
-            }
-        ];
+        const searchTopics: string[] = [];
 
-        tutorialTemplates.slice(0, 2).forEach((template, index) => {
-            tutorials.push({
-                id: `${baseId}-${index}`,
-                title: template.titleTemplate,
-                description: `Learn ${query.terms} with practical examples and hands-on coding. This comprehensive tutorial covers all the essential concepts and best practices.`,
-                url: `https://youtube.com/watch?v=${this.generateYouTubeId()}`,
-                platform: 'youtube',
-                duration: template.duration,
-                views: template.views,
-                rating: 4.2 + Math.random() * 0.6, // Random rating between 4.2-4.8
-                publishedDate: this.generateRandomDate(),
-                author: template.authorTemplate,
-                difficulty: query.difficulty,
-                topics: this.extractTopics(query.terms),
-                relevanceScore: 0.7 + Math.random() * 0.3, // Random score between 0.7-1.0
-                relatedTo: query.context
+        // Collect all relevant topics from learning strategy
+        if (learningStrategy.tutorialRequirements) {
+            learningStrategy.tutorialRequirements.forEach((requirement: any) => {
+                searchTopics.push(requirement.topic);
+                // Add prerequisites as additional search terms
+                if (requirement.prerequisites && requirement.prerequisites.length > 0) {
+                    searchTopics.push(...requirement.prerequisites.slice(0, 2));
+                }
             });
-        });
-
-        return tutorials;
-    }
-
-    private generateId(terms: string): string {
-        return terms.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    }
-
-    private generateYouTubeId(): string {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-        let result = '';
-        for (let i = 0; i < 11; i++) {
-            result += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return result;
-    }
-
-    private generateRandomDate(): string {
-        const start = new Date(2022, 0, 1);
-        const end = new Date();
-        const randomDate = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
-        return randomDate.toISOString();
-    }
-
-    private extractTopics(terms: string): string[] {
-        const topics = [];
-        const words = terms.toLowerCase().split(' ');
-        
-        // Extract meaningful topics
-        const meaningfulWords = words.filter(word => 
-            word.length > 3 && 
-            !['tutorial', 'best', 'practices', 'guide', 'complete'].includes(word)
-        );
-
-        topics.push(...meaningfulWords.slice(0, 4));
-        
-        // Add some common programming topics
-        const commonTopics = ['coding', 'development', 'programming', 'software engineering'];
-        if (topics.length < 3) {
-            topics.push(...commonTopics.slice(0, 3 - topics.length));
         }
 
-        return topics;
-    }
+        // Add immediate next steps to search topics
+        if (learningStrategy.learningSequence && learningStrategy.learningSequence.immediateNext) {
+            searchTopics.push(...learningStrategy.learningSequence.immediateNext);
+        }
 
-    private deduplicateAndRank(tutorials: TutorialRecommendation[]): TutorialRecommendation[] {
-        // Remove duplicates by title and sort by relevance score
-        const seen = new Set<string>();
-        const unique = tutorials.filter(tutorial => {
-            const key = tutorial.title.toLowerCase();
-            if (seen.has(key)) {
-                return false;
+        // Use YouTubeSearchService to get real tutorials
+        if (searchTopics.length > 0) {
+            console.log('TutorAgent: Searching for real YouTube tutorials for topics:', searchTopics);
+            const realTutorials = YouTubeSearchService.searchTutorials(searchTopics, 'intermediate', 6);
+            tutorials.push(...realTutorials);
+        }
+
+        // If we still need more tutorials, get curated high-quality ones
+        if (tutorials.length < 4) {
+            const additionalTopics = [
+                ...analysis.key_technologies.map(tech => tech.toLowerCase()),
+                'best practices',
+                'clean code',
+                'performance optimization'
+            ];
+            
+            const curatedTutorials = YouTubeSearchService.getCuratedTutorialsForTopics(additionalTopics);
+            
+            // Add tutorials that aren't already included
+            curatedTutorials.forEach(tutorial => {
+                if (!tutorials.find(t => t.id === tutorial.id) && tutorials.length < 8) {
+                    tutorials.push(tutorial);
+                }
+            });
+        }
+
+        // Update relevance scores based on learning strategy context
+        tutorials.forEach(tutorial => {
+            if (learningStrategy.learningGoals) {
+                const relatedGoal = learningStrategy.learningGoals.find((goal: any) => 
+                    goal.goal.toLowerCase().includes(tutorial.topics[0]) ||
+                    tutorial.title.toLowerCase().includes(goal.goal.toLowerCase().split(' ')[0])
+                );
+                
+                if (relatedGoal) {
+                    // Boost relevance for urgent or high-priority goals
+                    if (relatedGoal.urgency === 'immediate') {
+                        tutorial.relevanceScore = Math.min(0.95, tutorial.relevanceScore + 0.1);
+                    }
+                    
+                    // Set relation based on goal context
+                    tutorial.relatedTo = this.mapTopicToRelation(tutorial.topics[0], analysis);
+                }
             }
-            seen.add(key);
-            return true;
         });
 
-        return unique.sort((a, b) => b.relevanceScore - a.relevanceScore);
+        console.log(`TutorAgent: Generated ${tutorials.length} real YouTube tutorials with working URLs and thumbnails`);
+        return tutorials.slice(0, 8); // Return top 8 most relevant tutorials
+    }
+
+    // All placeholder generation methods have been removed.
+    // Real YouTube tutorial data is now provided by YouTubeSearchService.
+
+    private mapTopicToRelation(topic: string, analysis: CodebaseAnalysis): 'refactoring' | 'architecture' | 'general' {
+        if (topic.toLowerCase().includes('refactor') || topic.toLowerCase().includes('clean') || topic.toLowerCase().includes('quality')) {
+            return 'refactoring';
+        } else if (topic.toLowerCase().includes('architecture') || topic.toLowerCase().includes('design') || topic.toLowerCase().includes('pattern')) {
+            return 'architecture';
+        } else {
+            return 'general';
+        }
+    }
+
+    private getFallbackTutorialResults(analysis: CodebaseAnalysis, codeChunks: CodeChunk[]): TutorialResults {
+        console.error('TutorAgent: Dynamic analysis unavailable, cannot generate tutorials');
+        
+        return {
+            tutorials: [],
+            summary: {
+                totalTutorials: 0,
+                byDifficulty: {},
+                byPlatform: {},
+                averageRelevance: 0
+            }
+        };
     }
 
     private generateSummary(tutorials: TutorialRecommendation[]) {
@@ -390,48 +191,6 @@ export class TutorAgent {
             byDifficulty,
             byPlatform,
             averageRelevance: tutorials.length > 0 ? Math.round((totalRelevance / tutorials.length) * 100) / 100 : 0
-        };
-    }
-
-    private createFallbackTutorials(analysis: CodebaseAnalysis): TutorialResults {
-        const tutorials: TutorialRecommendation[] = [
-            {
-                id: 'clean-code-basics',
-                title: 'Clean Code Fundamentals',
-                description: 'Learn the principles of writing clean, maintainable code with practical examples.',
-                url: 'https://youtube.com/watch?v=example1',
-                platform: 'youtube',
-                duration: '42:30',
-                views: 156000,
-                rating: 4.7,
-                publishedDate: '2023-06-15T10:00:00Z',
-                author: 'CleanCode Academy',
-                difficulty: 'intermediate',
-                topics: ['clean code', 'best practices', 'software quality'],
-                relevanceScore: 0.9,
-                relatedTo: 'general'
-            },
-            {
-                id: 'refactoring-techniques',
-                title: 'Refactoring Techniques Every Developer Should Know',
-                description: 'Master essential refactoring techniques to improve your codebase quality.',
-                url: 'https://youtube.com/watch?v=example2',
-                platform: 'youtube',
-                duration: '35:45',
-                views: 98000,
-                rating: 4.5,
-                publishedDate: '2023-08-22T14:30:00Z',
-                author: 'Code Refactor Pro',
-                difficulty: 'intermediate',
-                topics: ['refactoring', 'code improvement', 'maintainability'],
-                relevanceScore: 0.8,
-                relatedTo: 'refactoring'
-            }
-        ];
-
-        return {
-            tutorials,
-            summary: this.generateSummary(tutorials)
         };
     }
 }

@@ -5,13 +5,20 @@ const RefactorAgent_1 = require("./RefactorAgent");
 const ArchitectAgent_1 = require("./ArchitectAgent");
 const LibrarianAgent_1 = require("./LibrarianAgent");
 const TutorAgent_1 = require("./TutorAgent");
+const OpenAIAgentOrchestrator_1 = require("../services/OpenAIAgentOrchestrator");
 class MultiAgentOrchestrator {
-    constructor(llmProvider) {
+    constructor(llmProvider, composioApiKey) {
+        this.useEnhancedAgents = true;
         this.llmProvider = llmProvider;
         this.refactorAgent = new RefactorAgent_1.RefactorAgent(llmProvider);
         this.architectAgent = new ArchitectAgent_1.ArchitectAgent(llmProvider);
-        this.librarianAgent = new LibrarianAgent_1.LibrarianAgent();
-        this.tutorAgent = new TutorAgent_1.TutorAgent();
+        this.librarianAgent = new LibrarianAgent_1.LibrarianAgent(llmProvider);
+        this.tutorAgent = new TutorAgent_1.TutorAgent(llmProvider);
+        this.enhancedOrchestrator = new OpenAIAgentOrchestrator_1.OpenAIAgentOrchestrator(llmProvider);
+        // Initialize enhanced orchestrator with Composio API key
+        if (composioApiKey) {
+            this.enhancedOrchestrator.initialize(composioApiKey);
+        }
     }
     async analyzeCodebase(chunks) {
         try {
@@ -26,12 +33,35 @@ class MultiAgentOrchestrator {
                 this.librarianAgent.findRelevantLibraries(analysis, chunks),
                 this.tutorAgent.findTutorials(analysis, chunks)
             ]);
+            // Step 3: Run enhanced agent analysis for unique value propositions
+            let enhanced;
+            if (this.useEnhancedAgents) {
+                try {
+                    console.log('Running enhanced agent analysis...');
+                    enhanced = await this.enhancedOrchestrator.analyzeWithEnhancedAgents(analysis, chunks);
+                    console.log('Enhanced analysis completed successfully');
+                    // If enhanced analysis succeeded, prioritize showing it
+                    if (enhanced && enhanced.uniqueRecommendations.length > 0) {
+                        console.log('Enhanced analysis has', enhanced.uniqueRecommendations.length, 'unique recommendations');
+                    }
+                }
+                catch (error) {
+                    console.warn('Enhanced agent analysis failed, continuing without it:', error);
+                    enhanced = undefined;
+                    // If enhanced agents fail due to API issues, disable them for this session
+                    if (error instanceof Error && (error.message.includes('API') || error.message.includes('overloaded'))) {
+                        console.log('Disabling enhanced agents due to API issues');
+                        this.useEnhancedAgents = false;
+                    }
+                }
+            }
             return {
                 analysis,
                 refactoring,
                 architecture,
                 libraries,
-                tutorials
+                tutorials,
+                enhanced
             };
         }
         catch (error) {
@@ -39,19 +69,31 @@ class MultiAgentOrchestrator {
             throw new Error(`Multi-agent analysis failed: ${error}`);
         }
     }
+    /**
+     * Configure enhanced agent settings
+     */
+    setEnhancedAgents(enabled) {
+        this.useEnhancedAgents = enabled;
+    }
+    /**
+     * Initialize enhanced agents with API keys
+     */
+    async initializeEnhancedAgents(composioApiKey) {
+        await this.enhancedOrchestrator.initialize(composioApiKey);
+    }
     async performInitialAnalysis(chunks) {
         // Prepare codebase summary for analysis
         const codebaseSummary = this.createCodebaseSummary(chunks);
         const systemPrompt = `You are an expert software architect and code analyst. 
-        Analyze the provided codebase and return a comprehensive analysis in the exact JSON format specified.
+        Analyze the provided codebase and return ONLY a valid JSON object with the exact structure specified.
+        
+        CRITICAL: Your response must be ONLY the JSON object, no other text, explanations, or markdown formatting.
         
         Focus on:
         1. Overall architecture and design patterns
         2. Technologies and frameworks used
         3. Code quality and potential improvements
-        4. Project complexity and maintainability
-        
-        Be thorough but concise in your analysis.`;
+        4. Project complexity and maintainability`;
         const userPrompt = `Analyze this codebase and provide insights:
 
 ${codebaseSummary}
@@ -79,18 +121,39 @@ Return your analysis as a JSON object with the following structure:
                 temperature: 0.3,
                 maxTokens: 2048
             });
-            // Parse JSON response
-            const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('No JSON found in response');
+            // Parse JSON response with better error handling
+            console.log('Raw LLM response:', response.content.substring(0, 500) + '...');
+            // Try multiple JSON extraction strategies
+            let jsonString = '';
+            // Strategy 1: Look for JSON block markers
+            const codeBlockMatch = response.content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+            if (codeBlockMatch) {
+                jsonString = codeBlockMatch[1];
             }
-            const analysis = JSON.parse(jsonMatch[0]);
-            return analysis;
+            else {
+                // Strategy 2: Find complete JSON object with proper bracket matching
+                const extractedJSON = this.extractCompleteJSON(response.content);
+                if (!extractedJSON) {
+                    console.error('Full LLM response:', response.content);
+                    throw new Error(`No JSON found in LLM response. Response length: ${response.content.length} chars`);
+                }
+                jsonString = extractedJSON;
+            }
+            console.log('Extracted JSON:', jsonString.substring(0, 200) + '...');
+            try {
+                const analysis = JSON.parse(jsonString);
+                console.log('Successfully parsed codebase analysis');
+                return analysis;
+            }
+            catch (parseError) {
+                console.error('JSON parsing failed:', parseError);
+                console.error('Failed JSON string:', jsonString);
+                throw new Error(`Failed to parse LLM JSON response: ${parseError}`);
+            }
         }
         catch (error) {
             console.error('Failed to parse analysis response:', error);
-            // Return fallback analysis
-            return this.createFallbackAnalysis(chunks);
+            throw new Error(`Failed to analyze codebase: ${error}`);
         }
     }
     createCodebaseSummary(chunks) {
@@ -137,23 +200,42 @@ ${chunk.content.substring(0, 300)}${chunk.content.length > 300 ? '...' : ''}`);
         });
         return summary.join('\n');
     }
-    createFallbackAnalysis(chunks) {
-        const languages = Array.from(new Set(chunks.map(chunk => chunk.language)));
-        const fileCount = new Set(chunks.map(chunk => chunk.filePath)).size;
-        return {
-            overall_summary: `A ${languages.join(', ')} project with ${fileCount} files and ${chunks.length} code chunks`,
-            key_technologies: languages,
-            architectural_patterns: ['Unknown'],
-            main_dependencies: ['Unknown'],
-            potential_areas_for_refactoring: ['Code analysis needed'],
-            project_type: 'other',
-            complexity_score: 5,
-            code_quality_metrics: {
-                maintainability: 5,
-                readability: 5,
-                testability: 5
+    extractCompleteJSON(text) {
+        // Find the first opening brace
+        const startIndex = text.indexOf('{');
+        if (startIndex === -1)
+            return null;
+        let braceCount = 0;
+        let inString = false;
+        let escapeNext = false;
+        for (let i = startIndex; i < text.length; i++) {
+            const char = text[i];
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
             }
-        };
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+            if (!inString) {
+                if (char === '{') {
+                    braceCount++;
+                }
+                else if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        // Found complete JSON object
+                        return text.substring(startIndex, i + 1);
+                    }
+                }
+            }
+        }
+        return null; // No complete JSON found
     }
 }
 exports.MultiAgentOrchestrator = MultiAgentOrchestrator;
