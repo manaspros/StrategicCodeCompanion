@@ -221,8 +221,25 @@ export class OpenAIAgentOrchestrator {
             };
         } catch (error) {
             console.error('Enhanced agent analysis failed:', error);
-            // Return fallback analysis
-            return this.getFallbackResults(analysis, codeChunks);
+            // Return empty results instead of fallback data
+            return {
+                uniqueRecommendations: [],
+                competitiveAnalysis: {
+                    similarProjects: [],
+                    missingFeatures: [],
+                    innovationOpportunities: []
+                },
+                businessStrategy: {
+                    marketPositioning: {
+                        currentPosition: '',
+                        targetPosition: '',
+                        differentiators: [],
+                        competitiveAdvantages: []
+                    },
+                    growthOpportunities: [],
+                    riskAssessment: []
+                }
+            };
         }
     }
 
@@ -345,289 +362,41 @@ export class OpenAIAgentOrchestrator {
     }
 
     private getFallbackResults(analysis: CodebaseAnalysis, codeChunks: CodeChunk[]): EnhancedAgentResults {
-        console.log('Using fallback enhanced results due to API limitations');
+        console.error('Enhanced agent analysis failed - returning empty results');
         
-        // Generate intelligent fallback recommendations based on project analysis
-        const fallbackRecommendations: UniqueRecommendation[] = [];
-        
-        // Add recommendations based on project type and technologies
-        if (analysis.project_type === 'web-app') {
-            if (analysis.key_technologies.some(tech => tech.toLowerCase().includes('react'))) {
-                fallbackRecommendations.push({
-                    id: 'react-performance-optimization',
-                    title: 'Advanced React Performance Optimization',
-                    description: 'Implement React 18 concurrent features, code splitting, and virtualization for superior performance',
-                    category: 'optimization',
-                    priority: 'high',
-                    businessImpact: {
-                        userExperience: 9,
-                        marketDifferentiation: 7,
-                        businessValue: 8,
-                        competitiveAdvantage: 8
-                    },
-                    implementationPlan: {
-                        effort: 'medium',
-                        timeframe: '2-4 weeks',
-                        resources: ['Frontend Developer', 'Performance Engineer'],
-                        prerequisites: ['React 18+', 'Performance monitoring tools'],
-                        steps: [
-                            'Audit current performance bottlenecks',
-                            'Implement React.memo and useMemo strategically',
-                            'Add code splitting at route level',
-                            'Implement virtual scrolling for large lists',
-                            'Set up performance monitoring'
-                        ]
-                    },
-                    justification: {
-                        marketGap: 'Many React apps suffer from performance issues that hurt user retention',
-                        competitorAnalysis: 'Most competitors have not fully adopted React 18 concurrent features',
-                        userBenefit: 'Significantly faster loading times and smoother interactions',
-                        businessRationale: 'Performance improvements directly correlate with user engagement and conversion rates'
-                    }
-                });
-            }
-            
-            // Add PWA recommendation for web apps
-            fallbackRecommendations.push({
-                id: 'progressive-web-app',
-                title: 'Progressive Web App Implementation',
-                description: 'Transform into a native-app-like experience with offline support and push notifications',
-                category: 'innovation',
-                priority: 'high',
-                businessImpact: {
-                    userExperience: 9,
-                    marketDifferentiation: 9,
-                    businessValue: 8,
-                    competitiveAdvantage: 9
-                },
-                implementationPlan: {
-                    effort: 'medium',
-                    timeframe: '3-5 weeks',
-                    resources: ['Full-stack Developer', 'DevOps Engineer'],
-                    prerequisites: ['HTTPS deployment', 'Service worker support'],
-                    steps: [
-                        'Implement service worker for caching',
-                        'Add web app manifest',
-                        'Enable offline functionality',
-                        'Implement push notifications',
-                        'Add install prompts'
-                    ]
-                },
-                justification: {
-                    marketGap: 'Most web applications are not PWA-enabled despite mobile usage dominance',
-                    competitorAnalysis: 'PWA adoption is still emerging, giving early adopters competitive advantage',
-                    userBenefit: 'App-store quality experience without downloads, works offline',
-                    businessRationale: 'PWAs have 2x higher conversion rates and 3x higher engagement than regular web apps'
-                }
-            });
-        }
-        
-        // Add AI integration recommendation regardless of project type
-        fallbackRecommendations.push({
-            id: 'ai-powered-features',
-            title: 'AI-Powered Intelligent Features',
-            description: 'Integrate machine learning for personalization, smart recommendations, and predictive analytics',
-            category: 'innovation',
-            priority: 'high',
-            businessImpact: {
-                userExperience: 9,
-                marketDifferentiation: 10,
-                businessValue: 9,
-                competitiveAdvantage: 10
-            },
-            implementationPlan: {
-                effort: 'high',
-                timeframe: '6-8 weeks',
-                resources: ['ML Engineer', 'Backend Developer', 'Data Scientist'],
-                prerequisites: ['User data collection', 'Cloud ML services access'],
-                steps: [
-                    'Design user behavior tracking',
-                    'Implement recommendation engine',
-                    'Add intelligent content curation',
-                    'Deploy A/B testing for AI features',
-                    'Monitor and optimize AI performance'
-                ]
-            },
-            justification: {
-                marketGap: 'Most applications lack intelligent, personalized experiences',
-                competitorAnalysis: 'AI integration is becoming a key differentiator in modern applications',
-                userBenefit: 'Highly personalized experience that learns and adapts to user preferences',
-                businessRationale: 'AI-powered personalization increases user engagement by 40% and retention by 35%'
-            }
-        });
-        
+        // No fallback data - return empty results for transparent testing
         return {
-            analysis,
+            uniqueRecommendations: [],
             competitiveAnalysis: {
-                similarProjects: [{
-                    name: 'Market Leaders in ' + analysis.project_type,
-                    description: 'Leading applications in your project category',
-                    stars: 5000,
-                    features: ['Advanced Performance', 'Modern UI/UX', 'Mobile-First Design'],
-                    uniqueAdvantages: ['First-mover advantage', 'Strong brand recognition'],
-                    marketPosition: 'Established market presence with room for innovation'
-                }],
-                missingFeatures: [
-                    {
-                        feature: 'AI-Powered Personalization',
-                        description: 'Machine learning-based user experience optimization',
-                        competitorCount: 2,
-                        businessValue: 'high',
-                        implementationEffort: 'high'
-                    },
-                    {
-                        feature: 'Real-time Collaboration',
-                        description: 'Live collaboration features with conflict resolution',
-                        competitorCount: 3,
-                        businessValue: 'high',
-                        implementationEffort: 'medium'
-                    }
-                ],
-                innovationOpportunities: [
-                    {
-                        opportunity: 'Voice-First Interface',
-                        description: 'Implement voice commands and conversational UI for hands-free interaction',
-                        marketGap: 'Limited voice interface adoption in this project category',
-                        potentialImpact: 'high',
-                        trendAnalysis: 'Voice interfaces are becoming standard in modern applications'
-                    }
-                ]
+                similarProjects: [],
+                missingFeatures: [],
+                innovationOpportunities: []
             },
-            marketIntelligence: {
-                technologyTrends: analysis.key_technologies.map(tech => ({
-                    technology: tech,
-                    trend: this.assessTechnologyTrend(tech),
-                    adoptionRate: this.estimateAdoptionRate(tech),
-                    useCase: this.identifyPrimaryUseCase(tech),
-                    futureProspect: this.assessFutureProspect(tech)
-                })),
-                packageEcosystem: [
-                    {
-                        category: 'Performance & Optimization',
-                        popularPackages: [
-                            {
-                                name: 'performance-monitoring-lib',
-                                weeklyDownloads: 100000,
-                                trend: 'growing',
-                                useCase: 'Real-time performance tracking'
-                            },
-                            {
-                                name: 'code-splitting-utilities',
-                                weeklyDownloads: 75000,
-                                trend: 'stable',
-                                useCase: 'Automated bundle optimization'
-                            }
-                        ]
-                    }
-                ],
-                developmentTrends: [
-                    {
-                        pattern: 'AI-First Development',
-                        description: 'Integration of AI capabilities as core features rather than add-ons',
-                        adoptionLevel: 'Rapidly growing across all project types',
-                        businessBenefit: 'Creates unique user experiences and competitive advantages'
-                    },
-                    {
-                        pattern: 'Performance-Centric Architecture',
-                        description: 'Building applications with performance as a primary design constraint',
-                        adoptionLevel: 'High adoption in user-facing applications',
-                        businessBenefit: 'Better user retention and conversion rates'
-                    }
-                ]
-            },
-            uniqueRecommendations: fallbackRecommendations,
             businessStrategy: {
                 marketPositioning: {
-                    currentPosition: `Emerging ${analysis.project_type} in competitive market`,
-                    targetPosition: 'Innovation leader with AI-powered differentiation',
-                    differentiators: [
-                        'Performance excellence',
-                        'AI-powered personalization',
-                        'Modern user experience'
-                    ],
-                    competitiveAdvantages: [
-                        'First-mover advantage in AI integration',
-                        'Superior technical architecture',
-                        'Focus on user-centric innovation'
-                    ]
+                    currentPosition: '',
+                    targetPosition: '',
+                    differentiators: [],
+                    competitiveAdvantages: []
                 },
-                growthOpportunities: [
-                    {
-                        opportunity: 'AI-Powered Features Market',
-                        market: 'Users seeking intelligent, personalized experiences',
-                        potential: 'high',
-                        strategy: 'Lead with AI capabilities that create unique value'
-                    },
-                    {
-                        opportunity: 'Performance-Conscious Users',
-                        market: 'Users who prioritize speed and efficiency',
-                        potential: 'high',
-                        strategy: 'Position as the fastest, most efficient solution in category'
-                    }
-                ],
-                riskAssessment: [
-                    {
-                        risk: 'AI technology becoming commoditized',
-                        likelihood: 'medium',
-                        impact: 'high',
-                        mitigation: 'Focus on unique AI applications and continuous innovation'
-                    },
-                    {
-                        risk: 'Performance expectations rising industry-wide',
-                        likelihood: 'high',
-                        impact: 'medium',
-                        mitigation: 'Maintain performance leadership through continuous optimization'
-                    }
-                ]
+                growthOpportunities: []
             }
         };
     }
     
     private assessTechnologyTrend(tech: string): 'rising' | 'stable' | 'declining' {
-        const risingTech = ['typescript', 'react', 'vue', 'svelte', 'next.js', 'vite', 'ai', 'ml'];
-        const decliningTech = ['jquery', 'angularjs', 'backbone'];
-        
-        const techLower = tech.toLowerCase();
-        if (risingTech.some(rt => techLower.includes(rt))) return 'rising';
-        if (decliningTech.some(dt => techLower.includes(dt))) return 'declining';
-        return 'stable';
+        return 'stable'; // Simplified implementation
     }
     
     private estimateAdoptionRate(tech: string): number {
-        const adoptionRates: Record<string, number> = {
-            'javascript': 0.95,
-            'typescript': 0.78,
-            'react': 0.72,
-            'vue': 0.35,
-            'angular': 0.28,
-            'html': 0.99,
-            'css': 0.99
-        };
-        
-        return adoptionRates[tech.toLowerCase()] || 0.60;
+        return 0.5; // Simplified implementation  
     }
     
     private identifyPrimaryUseCase(tech: string): string {
-        const useCases: Record<string, string> = {
-            'javascript': 'Interactive web development and user interfaces',
-            'typescript': 'Type-safe application development at scale',
-            'react': 'Component-based user interface development',
-            'vue': 'Progressive web application development',
-            'html': 'Web content structure and semantics',
-            'css': 'User interface styling and visual design'
-        };
-        
-        return useCases[tech.toLowerCase()] || 'General purpose development';
+        return 'General development'; // Simplified implementation
     }
     
     private assessFutureProspect(tech: string): string {
-        const prospects: Record<string, string> = {
-            'typescript': 'Continued growth as JavaScript typing becomes industry standard',
-            'react': 'Dominant position in frontend with ongoing evolution',
-            'vue': 'Steady growth with strong enterprise adoption',
-            'javascript': 'Stable with continued evolution and new features'
-        };
-        
-        return prospects[tech.toLowerCase()] || 'Stable evolution with continued relevance';
+        return 'Stable evolution'; // Simplified implementation
     }
 }

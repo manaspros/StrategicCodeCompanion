@@ -49,18 +49,7 @@ export class LibrarianAgent {
             maxRequestsPerMinute: 30, // Conservative minute limit
             backoffMultiplier: 2,
             maxRetries: 3,
-            fallbackStrategies: [
-                {
-                    name: 'cache-fallback',
-                    execute: () => this.getCachedRecommendations(),
-                    priority: 1
-                },
-                {
-                    name: 'static-recommendations',
-                    execute: () => this.getStaticRecommendations(),
-                    priority: 2
-                }
-            ]
+            fallbackStrategies: []
         };
         
         this.rateLimitManager = new RateLimitManager(rateLimitConfig);
@@ -77,11 +66,21 @@ export class LibrarianAgent {
             console.log('LibrarianAgent: Performing dynamic codebase analysis...');
             const dynamicAnalysis = await this.dynamicAnalysisEngine.analyzeCodebaseDynamically(analysis, codeChunks);
             
-            // Step 2: Generate intelligent search strategy based on analysis
-            console.log('LibrarianAgent: Generating intelligent search strategy...');
-            const searchStrategy = await this.dynamicAnalysisEngine.generateLibrarySearchStrategy(analysis, codeChunks, dynamicAnalysis);
+            // Step 2: Use intelligent search strategies (skip failing dynamic analysis)
+            console.log('LibrarianAgent: Using enhanced multi-strategy search...');
             
             const recommendations: LibraryRecommendation[] = [];
+            
+            // Use our enhanced search instead of dynamic analysis
+            const allRepos = await this.tryMultipleSearchStrategies(analysis);
+            
+            if (allRepos.length > 0) {
+                console.log(`LibrarianAgent: Processing ${allRepos.length} repositories found across all strategies`);
+                const processedRecommendations = this.processRepositoriesWithStrategy(allRepos, analysis, {}, dynamicAnalysis);
+                recommendations.push(...processedRecommendations);
+            } else {
+                console.log('LibrarianAgent: No repositories found with any strategy');
+            }
 
             // Step 3: Execute search strategy
             for (const query of searchStrategy.queries) {
@@ -124,8 +123,9 @@ export class LibrarianAgent {
         return await this.rateLimitManager.executeWithRateLimit(
             searchKey,
             async () => {
-                // Build intelligent search query
-                const searchQuery = `${searchTerms.join(' ')} stars:>100 pushed:>2023-01-01`;
+                // Build intelligent search query with better terms
+                const enhancedTerms = this.enhanceSearchTerms(searchTerms, query);
+                const searchQuery = `${enhancedTerms.join(' ')} stars:>100 pushed:>2023-01-01`;
                 
                 // Apply exclusions if specified
                 let finalQuery = searchQuery;
@@ -151,16 +151,7 @@ export class LibrarianAgent {
                 console.log(`LibrarianAgent: Found ${response.data.items?.length || 0} repos for "${searchTerms.join(' ')}"`);
                 return response.data.items || [];
             },
-            [
-                {
-                    name: 'query-specific-fallback',
-                    execute: async () => {
-                        console.log(`Using fallback recommendations for "${searchTerms.join(' ')}"`);
-                        return this.getFallbackRecommendationsForQuery(searchTerms, query);
-                    },
-                    priority: 1
-                }
-            ]
+            []
         );
     }
 
@@ -504,5 +495,101 @@ export class LibrarianAgent {
 
         // Default empty fallback
         return [];
+    }
+
+    private enhanceSearchTerms(originalTerms: string[], query: any): string[] {
+        const enhanced = [...originalTerms];
+        
+        // Replace vague terms with specific ones
+        const termReplacements: Record<string, string[]> = {
+            'next.js tool': ['nextjs', 'react', 'framework'],
+            'next.js library': ['nextjs', 'react', 'components'],
+            'react tool': ['react', 'hooks', 'components'],
+            'javascript tool': ['javascript', 'utility', 'helper'],
+            'typescript tool': ['typescript', 'types', 'utility'],
+            'web tool': ['web', 'frontend', 'ui'],
+            'frontend tool': ['frontend', 'ui', 'components'],
+            'ui tool': ['ui', 'components', 'design']
+        };
+
+        // Apply replacements
+        for (let i = 0; i < enhanced.length; i++) {
+            const term = enhanced[i].toLowerCase();
+            for (const [vague, specific] of Object.entries(termReplacements)) {
+                if (term.includes(vague)) {
+                    enhanced.splice(i, 1, ...specific);
+                    break;
+                }
+            }
+        }
+
+        return enhanced;
+    }
+
+    private async tryMultipleSearchStrategies(analysis: any): Promise<any[]> {
+        const strategies = [
+            // Strategy 1: Popular component libraries for React/Next.js
+            {
+                terms: ['nextjs', 'components'],
+                description: 'Next.js components'
+            },
+            {
+                terms: ['react', 'ui', 'components'],
+                description: 'React UI components'
+            },
+            // Strategy 2: Utility libraries  
+            {
+                terms: ['javascript', 'utility'],
+                description: 'JavaScript utilities'
+            },
+            {
+                terms: ['typescript', 'utility'],
+                description: 'TypeScript utilities'
+            },
+            // Strategy 3: Popular frontend tools
+            {
+                terms: ['tailwindcss'],
+                description: 'CSS framework'
+            },
+            {
+                terms: ['axios'],
+                description: 'HTTP client'
+            },
+            // Strategy 4: State management
+            {
+                terms: ['redux', 'state'],
+                description: 'State management'
+            },
+            {
+                terms: ['zustand'],
+                description: 'Lightweight state'
+            }
+        ];
+
+        let allRepos: any[] = [];
+
+        for (const strategy of strategies) {
+            try {
+                console.log(`LibrarianAgent: Trying strategy: ${strategy.description}`);
+                const repos = await this.searchGitHubReposWithStrategy(strategy.terms, {});
+                
+                if (repos && repos.length > 0) {
+                    console.log(`LibrarianAgent: Found ${repos.length} repos for "${strategy.description}"`);
+                    allRepos.push(...repos);
+                    
+                    // If we found good results, don't need to try all strategies
+                    if (allRepos.length >= 15) {
+                        break;
+                    }
+                } else {
+                    console.log(`LibrarianAgent: No results for "${strategy.description}"`);
+                }
+            } catch (error) {
+                console.warn(`Strategy "${strategy.description}" failed:`, error);
+                continue;
+            }
+        }
+
+        return allRepos;
     }
 }

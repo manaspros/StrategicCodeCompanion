@@ -8,6 +8,11 @@ import { ReportGenerator } from './reports/ReportGenerator';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Strategic Code Companion is activating...');
+    
+    // Set Nomic API key if not already set
+    if (!process.env.NOMIC_API_KEY) {
+        process.env.NOMIC_API_KEY = 'nk-FopoMYmt6vR21Tq6wBsajndbcwA7kbelpfq5pTiPIXg';
+    }
     console.log('Extension URI:', context.extensionUri.toString());
     
     // Initialize the key manager for secure API key storage

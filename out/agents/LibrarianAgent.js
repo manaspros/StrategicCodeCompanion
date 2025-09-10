@@ -17,18 +17,7 @@ class LibrarianAgent {
             maxRequestsPerMinute: 30,
             backoffMultiplier: 2,
             maxRetries: 3,
-            fallbackStrategies: [
-                {
-                    name: 'cache-fallback',
-                    execute: () => this.getCachedRecommendations(),
-                    priority: 1
-                },
-                {
-                    name: 'static-recommendations',
-                    execute: () => this.getStaticRecommendations(),
-                    priority: 2
-                }
-            ]
+            fallbackStrategies: []
         };
         this.rateLimitManager = new RateLimitManager_1.RateLimitManager(rateLimitConfig);
     }
@@ -102,16 +91,7 @@ class LibrarianAgent {
             });
             console.log(`LibrarianAgent: Found ${response.data.items?.length || 0} repos for "${searchTerms.join(' ')}"`);
             return response.data.items || [];
-        }, [
-            {
-                name: 'query-specific-fallback',
-                execute: async () => {
-                    console.log(`Using fallback recommendations for "${searchTerms.join(' ')}"`);
-                    return this.getFallbackRecommendationsForQuery(searchTerms, query);
-                },
-                priority: 1
-            }
-        ]);
+        }, []);
     }
     async processRepositoriesWithStrategy(repos, analysis, query, dynamicAnalysis) {
         const recommendations = [];

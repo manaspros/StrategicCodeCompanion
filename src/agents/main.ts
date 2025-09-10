@@ -130,15 +130,15 @@ export class MultiAgentOrchestrator {
         const codebaseSummary = this.createCodebaseSummary(chunks);
         
         const systemPrompt = `You are an expert software architect and code analyst. 
-        Analyze the provided codebase and return a comprehensive analysis in the exact JSON format specified.
+        Analyze the provided codebase and return ONLY a valid JSON object with the exact structure specified.
+        
+        CRITICAL: Your response must be ONLY the JSON object, no other text, explanations, or markdown formatting.
         
         Focus on:
         1. Overall architecture and design patterns
         2. Technologies and frameworks used
         3. Code quality and potential improvements
-        4. Project complexity and maintainability
-        
-        Be thorough but concise in your analysis.`;
+        4. Project complexity and maintainability`;
 
         const userPrompt = `Analyze this codebase and provide insights:
 
@@ -169,18 +169,40 @@ Return your analysis as a JSON object with the following structure:
                 maxTokens: 2048
             });
 
-            // Parse JSON response
-            const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('No JSON found in response');
+            // Parse JSON response with better error handling
+            console.log('Raw LLM response:', response.content.substring(0, 500) + '...');
+            
+            // Try multiple JSON extraction strategies
+            let jsonString = '';
+            
+            // Strategy 1: Look for JSON block markers
+            const codeBlockMatch = response.content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+            if (codeBlockMatch) {
+                jsonString = codeBlockMatch[1];
+            } else {
+                // Strategy 2: Find complete JSON object with proper bracket matching
+                const extractedJSON = this.extractCompleteJSON(response.content);
+                if (!extractedJSON) {
+                    console.error('Full LLM response:', response.content);
+                    throw new Error(`No JSON found in LLM response. Response length: ${response.content.length} chars`);
+                }
+                jsonString = extractedJSON;
             }
 
-            const analysis = JSON.parse(jsonMatch[0]) as CodebaseAnalysis;
-            return analysis;
+            console.log('Extracted JSON:', jsonString.substring(0, 200) + '...');
+            
+            try {
+                const analysis = JSON.parse(jsonString) as CodebaseAnalysis;
+                console.log('Successfully parsed codebase analysis');
+                return analysis;
+            } catch (parseError) {
+                console.error('JSON parsing failed:', parseError);
+                console.error('Failed JSON string:', jsonString);
+                throw new Error(`Failed to parse LLM JSON response: ${parseError}`);
+            }
         } catch (error) {
             console.error('Failed to parse analysis response:', error);
-            // Return fallback analysis
-            return this.createFallbackAnalysis(chunks);
+            throw new Error(`Failed to analyze codebase: ${error}`);
         }
     }
 
@@ -240,23 +262,47 @@ ${chunk.content.substring(0, 300)}${chunk.content.length > 300 ? '...' : ''}`);
         return summary.join('\n');
     }
 
-    private createFallbackAnalysis(chunks: CodeChunk[]): CodebaseAnalysis {
-        const languages = Array.from(new Set(chunks.map(chunk => chunk.language)));
-        const fileCount = new Set(chunks.map(chunk => chunk.filePath)).size;
+    private extractCompleteJSON(text: string): string | null {
+        // Find the first opening brace
+        const startIndex = text.indexOf('{');
+        if (startIndex === -1) return null;
+
+        let braceCount = 0;
+        let inString = false;
+        let escapeNext = false;
         
-        return {
-            overall_summary: `A ${languages.join(', ')} project with ${fileCount} files and ${chunks.length} code chunks`,
-            key_technologies: languages,
-            architectural_patterns: ['Unknown'],
-            main_dependencies: ['Unknown'],
-            potential_areas_for_refactoring: ['Code analysis needed'],
-            project_type: 'other',
-            complexity_score: 5,
-            code_quality_metrics: {
-                maintainability: 5,
-                readability: 5,
-                testability: 5
+        for (let i = startIndex; i < text.length; i++) {
+            const char = text[i];
+            
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
             }
-        };
+            
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+            
+            if (!inString) {
+                if (char === '{') {
+                    braceCount++;
+                } else if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        // Found complete JSON object
+                        return text.substring(startIndex, i + 1);
+                    }
+                }
+            }
+        }
+        
+        return null; // No complete JSON found
     }
+
 }

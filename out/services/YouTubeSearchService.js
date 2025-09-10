@@ -74,23 +74,9 @@ class YouTubeSearchService {
      * Get curated tutorials for common programming topics
      */
     static getCuratedTutorialsForTopics(topics) {
-        const recommendations = [];
-        topics.forEach(topic => {
-            const tutorial = this.getTutorialByTopic(topic);
-            if (tutorial && !recommendations.find(r => r.id === tutorial.id)) {
-                recommendations.push(tutorial);
-            }
-        });
-        // If we don't have enough, add some high-quality general recommendations
-        if (recommendations.length < 3) {
-            const generalRecs = this.getHighQualityRecommendations(5 - recommendations.length);
-            generalRecs.forEach(rec => {
-                if (!recommendations.find(r => r.id === rec.id)) {
-                    recommendations.push(rec);
-                }
-            });
-        }
-        return recommendations;
+        // Disabled to test real agent functionality - no fallback data
+        console.warn('YouTubeSearchService: getCuratedTutorialsForTopics disabled - no fallback data');
+        return [];
     }
     /**
      * Get high-quality general recommendations

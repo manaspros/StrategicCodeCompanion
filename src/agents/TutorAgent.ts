@@ -162,20 +162,16 @@ export class TutorAgent {
     }
 
     private getFallbackTutorialResults(analysis: CodebaseAnalysis, codeChunks: CodeChunk[]): TutorialResults {
-        console.log('TutorAgent: Using fallback results with curated YouTube tutorials - dynamic analysis unavailable');
-        
-        // Use technology-specific curated tutorials as fallback
-        const topics = [
-            ...analysis.key_technologies.map(tech => tech.toLowerCase()),
-            'best practices',
-            'clean code'
-        ];
-        
-        const fallbackTutorials = YouTubeSearchService.getCuratedTutorialsForTopics(topics);
+        console.error('TutorAgent: Dynamic analysis unavailable, cannot generate tutorials');
         
         return {
-            tutorials: fallbackTutorials.slice(0, 6),
-            summary: this.generateSummary(fallbackTutorials.slice(0, 6))
+            tutorials: [],
+            summary: {
+                totalTutorials: 0,
+                byDifficulty: {},
+                byPlatform: {},
+                averageRelevance: 0
+            }
         };
     }
 

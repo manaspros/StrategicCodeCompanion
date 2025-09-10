@@ -33,6 +33,10 @@ const DependencyGraphProvider_1 = require("./visualizations/DependencyGraphProvi
 const ReportGenerator_1 = require("./reports/ReportGenerator");
 function activate(context) {
     console.log('Strategic Code Companion is activating...');
+    // Set Nomic API key if not already set
+    if (!process.env.NOMIC_API_KEY) {
+        process.env.NOMIC_API_KEY = 'nk-FopoMYmt6vR21Tq6wBsajndbcwA7kbelpfq5pTiPIXg';
+    }
     console.log('Extension URI:', context.extensionUri.toString());
     // Initialize the key manager for secure API key storage
     const keyManager = new keyManager_1.KeyManager(context);
